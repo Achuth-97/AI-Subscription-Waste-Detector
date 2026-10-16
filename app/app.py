@@ -586,6 +586,34 @@ st.markdown(
         background: linear-gradient(100deg, #7187b8, #628d99);
         box-shadow: none;
     }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+        background-color: #fff !important;
+        border: 1px solid #cbd8e6 !important;
+        border-radius: 10px !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"]:focus-within {
+        border-color: #2864e8 !important;
+        box-shadow: 0 0 0 2px rgba(40,100,232,.14) !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputField"] {
+        background-color: transparent !important;
+        color: #10243a !important;
+        -webkit-text-fill-color: #10243a !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputField"]::placeholder {
+        color: #63758a !important;
+        opacity: 1;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"] button[aria-label*="password" i] {
+        color: #10243a !important;
+        background-color: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"] button[aria-label*="password" i] svg {
+        color: #10243a !important;
+        fill: currentColor;
+    }
     .stButton > button { border-radius: 10px; }
     [data-testid="stDataEditor"],
     [data-testid="stDataFrame"] {
