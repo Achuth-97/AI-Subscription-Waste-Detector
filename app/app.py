@@ -5,6 +5,7 @@ from http.client import HTTPException
 import json
 import re
 import sqlite3
+import sys
 import xml.etree.ElementTree as ET
 from hashlib import sha256
 from io import BytesIO
@@ -13,6 +14,10 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import joblib
 import numpy as np
@@ -43,7 +48,6 @@ except ImportError:
     SIMPLE_ICONS = None
 
 
-ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = ROOT / "models" / "subscription_model.pkl"
 HISTORY_PATH = ROOT / "dataset" / "usage_history.csv"
 
