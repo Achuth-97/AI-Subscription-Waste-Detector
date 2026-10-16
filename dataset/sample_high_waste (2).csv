@@ -1,0 +1,8 @@
+subscription_name,category,monthly_cost,usage_days,usage_hours,months_subscribed,previous_usage_days
+Netflix,Entertainment,649,1,1.0,8,4
+Udemy,Education,999,0,0.0,5,0
+Canva Pro,Productivity,499,1,0.5,6,2
+Amazon Prime,Shopping,299,2,1.0,9,3
+Cloud Backup Pro,Cloud Storage,399,0,0.0,4,0
+Fitness App,Health & Fitness,299,1,0.5,7,2
+Music Premium,Music,129,2,2.0,10,3

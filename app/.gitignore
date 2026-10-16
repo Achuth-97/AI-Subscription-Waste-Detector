@@ -1,0 +1,10 @@
+
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+runtime_data/
+*.sqlite3
+*.db
+.env
+.streamlit/secrets.toml

@@ -1,0 +1,9 @@
+subscription_name,category,monthly_cost,usage_days,usage_hours,months_subscribed,previous_usage_days
+Netflix,Entertainment,649,3,5,8,7
+Spotify,Music,119,26,39,14,25
+Udemy,Education,999,2,1,5,6
+Canva Pro,Productivity,499,6,3,6,10
+Google One,Cloud Storage,130,17,2,9,16
+Amazon Prime,Shopping,299,10,8,10,9
+Fitness App,Health & Fitness,299,15,7,7,12
+Microsoft 365,Productivity,489,21,18,15,20
