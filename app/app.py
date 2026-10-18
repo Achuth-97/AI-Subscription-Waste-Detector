@@ -572,6 +572,11 @@ st.markdown(
         color: #fff !important;
         fill: #fff !important;
     }
+    [data-testid="stElementContainer"].st-key-FormSubmitter-login_form-Log-in
+    [data-testid="stFormSubmitButton"] [data-testid="stMarkdownContainer"] p {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+    }
     .stButton > button[kind="primary"]:hover {
         color: #fff !important;
         box-shadow: 0 11px 22px rgba(40,100,232,.28), inset 0 1px 0 rgba(255,255,255,.2);
