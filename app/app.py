@@ -94,32 +94,32 @@ def build_pdf_report(data, total_spending, review_cost):
         title="Subscription Waste Analysis Report",
     )
 
-    font_candidates = [
-        (Path("C:/Windows/Fonts/arial.ttf"), Path("C:/Windows/Fonts/arialbd.ttf")),
-        (
-            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-        ),
-        (Path("/Library/Fonts/Arial.ttf"), Path("/Library/Fonts/Arial Bold.ttf")),
-    ]
-    regular_font, bold_font = "Helvetica", "Helvetica-Bold"
-    for regular_path, bold_path in font_candidates:
-        if regular_path.is_file():
-            regular_font, bold_font = "SubscriptionReport", "SubscriptionReport-Bold"
-            pdfmetrics.registerFont(TTFont(regular_font, str(regular_path)))
-            pdfmetrics.registerFont(
-                TTFont(bold_font, str(bold_path if bold_path.is_file() else regular_path))
+    regular_font = "DejaVuSans"
+    bold_font = "DejaVuSans-Bold"
+    if regular_font not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(
+            TTFont(regular_font, str(ROOT / "assets" / "fonts" / "DejaVuSans.ttf"))
+        )
+    if bold_font not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(
+            TTFont(
+                bold_font,
+                str(ROOT / "assets" / "fonts" / "DejaVuSans-Bold.ttf"),
             )
-            pdfmetrics.registerFontFamily(
-                regular_font, normal=regular_font, bold=bold_font
-            )
-            break
+        )
+    pdfmetrics.registerFontFamily(
+        regular_font,
+        normal=regular_font,
+        bold=bold_font,
+        italic=regular_font,
+        boldItalic=bold_font,
+    )
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         "ReportTitle",
         parent=styles["Title"],
-        fontName="Helvetica-Bold",
+        fontName=bold_font,
         fontSize=18,
         leading=22,
         textColor=colors.HexColor("#17324D"),
@@ -208,6 +208,7 @@ def build_pdf_report(data, total_spending, review_cost):
     report_table.setStyle(
         TableStyle(
             [
+                ("FONTNAME", (0, 0), (-1, -1), regular_font),
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17324D")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -241,6 +242,7 @@ def build_pdf_report(data, total_spending, review_cost):
     summary.setStyle(
         TableStyle(
             [
+                ("FONTNAME", (0, 0), (-1, -1), regular_font),
                 ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EEF4F8")),
                 ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#D6DEE6")),
                 ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D6DEE6")),
@@ -255,7 +257,7 @@ def build_pdf_report(data, total_spending, review_cost):
 
     def add_page_number(canvas, doc):
         canvas.saveState()
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(regular_font, 8)
         canvas.setFillColor(colors.HexColor("#5D6B78"))
         canvas.drawRightString(
             page_size[0] - 0.35 * inch, 0.22 * inch, f"Page {doc.page}"
@@ -585,6 +587,72 @@ st.markdown(
         color: rgba(255,255,255,.86) !important;
         background: linear-gradient(100deg, #7187b8, #628d99);
         box-shadow: none;
+    }
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button {
+        width: 100%;
+        min-height: 2.9rem;
+        padding: 0 1.45rem;
+        border-radius: 12px;
+        color: #fff !important;
+        font-weight: 700;
+        background: linear-gradient(100deg, #2864e8, #147d91);
+        transition: background .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button:hover,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button:hover {
+        color: #fff !important;
+        background: linear-gradient(100deg, #2054c7, #106875);
+        box-shadow: 0 8px 18px rgba(40,100,232,.24);
+        transform: translateY(-1px);
+    }
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button:focus-visible,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button:focus-visible {
+        outline: 3px solid rgba(40,100,232,.35);
+        outline-offset: 2px;
+    }
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button *,
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button svg,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button *,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button svg {
+        color: #fff !important;
+        fill: #fff !important;
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        max-width: 24rem;
+        min-height: 3rem;
+        padding: .65rem 1.3rem;
+        border: 0;
+        border-radius: 12px;
+        color: #fff !important;
+        font-weight: 700;
+        background: linear-gradient(100deg, #2864e8, #147d91);
+        box-shadow: 0 8px 18px rgba(40,100,232,.22), inset 0 1px 0 rgba(255,255,255,.18);
+        transition: box-shadow .18s ease, transform .18s ease;
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button:hover {
+        color: #fff !important;
+        box-shadow: 0 11px 22px rgba(40,100,232,.28), inset 0 1px 0 rgba(255,255,255,.2);
+        transform: translateY(-1px);
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button:focus-visible {
+        outline: 3px solid rgba(40,100,232,.35);
+        outline-offset: 2px;
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button::after {
+        content: "↓";
+        margin-left: .5rem;
+        font-size: 1.1rem;
+        line-height: 1;
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button *,
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button svg {
+        color: #fff !important;
+        fill: #fff !important;
     }
     [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
         background-color: #fff !important;
@@ -1299,7 +1367,11 @@ if not st.session_state.get("auth_user_id"):
                 "Password", type="password", key="login_password"
             )
             login_submitted = st.form_submit_button(
-                "Log in", type="primary", width="stretch"
+                "Log in",
+                type="primary",
+                icon=":material/login:",
+                width="stretch",
+                key="login-submit",
             )
         if login_submitted:
             try:
@@ -1329,7 +1401,11 @@ if not st.session_state.get("auth_user_id"):
                 key="confirmation_password",
             )
             registration_submitted = st.form_submit_button(
-                "Create account", type="primary", width="stretch"
+                "Create account",
+                type="primary",
+                icon=":material/person_add:",
+                width="stretch",
+                key="registration-submit",
             )
         if registration_submitted:
             if registration_password != confirmation_password:
@@ -2042,6 +2118,8 @@ if has_current_analysis:
             file_name="subscription_analysis_report.pdf",
             mime="application/pdf",
             type="primary",
+            icon=":material/picture_as_pdf:",
+            key="pdf-report-download",
         )
         st.caption(
             "Model limitation: the current model was trained on synthetic labels. "
