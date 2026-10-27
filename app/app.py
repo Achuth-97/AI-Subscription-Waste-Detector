@@ -326,6 +326,37 @@ st.markdown(
             radial-gradient(ellipse at 12% 0%, rgba(42, 100, 232, .06), transparent 35%),
             #f5f8fc;
     }
+    .stApp:has(.st-key-auth-layout) {
+        position: relative;
+        isolation: isolate;
+        min-height: 100vh;
+        overflow-x: clip;
+        background-color: #D7E2EE;
+        background-image:
+            radial-gradient(circle at 8% 17%, rgba(83, 153, 245, .05) 0 5.2rem, transparent 5.3rem),
+            radial-gradient(circle at 88% 19%, rgba(44, 183, 181, .045) 0 8.5rem, transparent 8.6rem),
+            radial-gradient(circle at 93% 73%, rgba(80, 153, 229, .04) 0 4.7rem, transparent 4.8rem),
+            radial-gradient(ellipse at 49% 39%, rgba(247,250,253,.64), transparent 56%),
+            linear-gradient(122deg, #D7E2EE 0%, #E7EEF7 48%, #D9F0EF 100%);
+        background-attachment: fixed;
+    }
+    .stApp:has(.st-key-auth-layout)::before {
+        position: fixed;
+        z-index: -1;
+        top: 16%;
+        right: 3.5%;
+        width: 190px;
+        height: 155px;
+        background-image: radial-gradient(rgba(49, 126, 187, .13) 1px, transparent 1.4px);
+        background-size: 15px 15px;
+        content: "";
+        opacity: .23;
+        pointer-events: none;
+    }
+    .stApp:has(.st-key-auth-layout) [data-testid="stMainBlockContainer"] {
+        position: relative;
+        z-index: 1;
+    }
     [data-testid="stAppViewContainer"],
     [data-testid="stHeader"] {
         background: transparent;
@@ -336,7 +367,7 @@ st.markdown(
     }
     [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"],
     [data-testid="stTabPanel"] > [data-testid="stVerticalBlock"] {
-        gap: .6rem;
+        gap: .72rem;
     }
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #10243a 0%, #142f4a 100%);
@@ -400,6 +431,10 @@ st.markdown(
         background: #fff;
         box-shadow: 0 2px 7px rgba(16,36,58,.09);
     }
+    [data-testid="stTabs"] [data-baseweb="tab"]:focus-visible {
+        outline: 3px solid rgba(40,100,232,.4);
+        outline-offset: 2px;
+    }
     [data-testid="stFileUploader"] section {
         min-height: 6.2rem;
         padding: .5rem .7rem;
@@ -417,7 +452,7 @@ st.markdown(
         font-size: .85rem;
     }
     [data-testid="stVerticalBlockBorderWrapper"] {
-        padding: .45rem .65rem;
+        padding: .52rem .72rem;
         border-color: #e2eaf3;
         border-radius: 16px;
         background: rgba(255,255,255,.78);
@@ -483,6 +518,278 @@ st.markdown(
         font-size: .98rem;
         margin: 0;
         line-height: 1.5;
+    }
+    .auth-hero {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.7rem;
+        padding: clamp(1.2rem, 2.5vw, 1.8rem) clamp(1.25rem, 3vw, 2.3rem);
+        margin: .3rem 0 1.25rem;
+        border-color: rgba(255,255,255,.24);
+        box-shadow: 0 12px 28px rgba(18,44,72,.13), inset 0 1px 0 rgba(255,255,255,.12);
+        text-align: left;
+    }
+    .auth-hero:after {
+        border-color: rgba(255,255,255,.15);
+        box-shadow: 0 0 0 30px rgba(255,255,255,.025), 0 0 0 62px rgba(255,255,255,.018);
+    }
+    .auth-hero:before {
+        border-color: rgba(158,231,223,.17);
+        box-shadow: 0 0 0 22px rgba(255,255,255,.018);
+    }
+    .auth-brand {
+        display: flex;
+        align-items: center;
+        gap: 1.1rem;
+        min-width: 0;
+    }
+    .auth-brand-icon {
+        display: grid;
+        flex: 0 0 3.3rem;
+        width: 3.3rem;
+        height: 3.3rem;
+        place-items: center;
+        border: 1px solid rgba(255,255,255,.28);
+        border-radius: 15px;
+        background: rgba(255,255,255,.12);
+        font-size: 1.6rem;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.16);
+    }
+    .auth-brand-icon svg {
+        display: block;
+        width: 1.7rem;
+        height: 1.7rem;
+        fill: none;
+        stroke: #b7f0e9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.8;
+    }
+    .auth-hero h1 {
+        font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+        margin: 0 0 .35rem;
+    }
+    .auth-hero p {
+        max-width: 620px;
+        margin: 0;
+        font-size: .94rem;
+    }
+    .auth-badges {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: .55rem;
+        max-width: 430px;
+    }
+    .auth-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .5rem .7rem;
+        border: 1px solid rgba(255,255,255,.22);
+        border-radius: 999px;
+        color: #f2fbff;
+        background: rgba(255,255,255,.1);
+        font-size: .76rem;
+        font-weight: 650;
+        white-space: nowrap;
+    }
+    .st-key-auth-layout [data-testid="stHorizontalBlock"] {
+        align-items: center;
+        gap: clamp(1rem, 2vw, 1.8rem);
+    }
+    .auth-features {
+        display: flex;
+        flex-direction: column;
+        gap: 1.1rem;
+        padding: .3rem 0;
+    }
+    .auth-feature {
+        display: flex;
+        align-items: flex-start;
+        gap: .85rem;
+        padding: .25rem 0;
+    }
+    .auth-feature-icon {
+        display: grid;
+        flex: 0 0 2.65rem;
+        width: 2.65rem;
+        height: 2.65rem;
+        place-items: center;
+        border: 1px solid #d3e2ec;
+        border-radius: 50%;
+        color: #116f7d;
+        background: linear-gradient(145deg, #fff, #eaf6f8);
+        box-shadow: 0 3px 10px rgba(22,72,97,.07);
+        font-size: 1.12rem;
+    }
+    .auth-feature-copy strong {
+        display: block;
+        margin: .12rem 0 .2rem;
+        color: #173653;
+        font-size: .94rem;
+        font-weight: 750;
+    }
+    .auth-feature-copy p {
+        margin: 0;
+        color: #5B718A;
+        font-size: .82rem;
+        line-height: 1.48;
+    }
+    .auth-card-heading {
+        padding: .3rem 0 .4rem;
+        text-align: center;
+    }
+    .auth-card-heading h2 {
+        margin: .25rem 0 .2rem;
+        color: #173653;
+        font-size: 1.55rem;
+        letter-spacing: -.035em;
+    }
+    .auth-card-heading p {
+        margin: 0;
+        color: #5B718A;
+        font-size: .88rem;
+    }
+    .auth-security {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .5rem;
+        margin: .65rem .15rem .05rem;
+        padding: .65rem .6rem .05rem;
+        border-top: 1px solid #C3D2E2;
+        color: #5B718A;
+        font-size: .78rem;
+        text-align: center;
+    }
+    .auth-security-icon {
+        display: inline-flex;
+        flex: 0 0 1rem;
+        width: 1rem;
+        height: 1rem;
+        color: #147d78;
+    }
+    .auth-security-icon svg {
+        width: 100%;
+        height: 100%;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.8;
+    }
+    .auth-page-waves {
+        position: fixed;
+        z-index: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        width: 100vw;
+        height: clamp(54px, 8vh, 82px);
+        overflow: hidden;
+        margin: 0;
+        pointer-events: none;
+    }
+    .auth-page-waves svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+    .auth-illustration {
+        position: relative;
+        display: grid;
+        min-height: 330px;
+        place-items: center;
+        overflow: hidden;
+        border: 1px solid #C3D2E2;
+        border-radius: 24px;
+        background:
+            radial-gradient(circle at 50% 42%, rgba(35,145,164,.09), transparent 58%),
+            linear-gradient(145deg, #FFFFFF, #EAF2F9);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 10px 24px rgba(18,55,78,.065);
+    }
+    .auth-illustration:before,
+    .auth-illustration:after {
+        position: absolute;
+        content: "";
+        border: 1px solid rgba(31,130,148,.12);
+        border-radius: 50%;
+        pointer-events: none;
+    }
+    .auth-illustration:before {
+        width: 260px;
+        height: 260px;
+        top: -110px;
+        right: -100px;
+        box-shadow: 0 0 0 24px rgba(31,130,148,.035);
+    }
+    .auth-illustration:after {
+        width: 180px;
+        height: 180px;
+        bottom: -100px;
+        left: -65px;
+    }
+    .auth-illustration svg {
+        position: relative;
+        z-index: 1;
+        display: block;
+        width: min(100%, 370px);
+        height: auto;
+        padding: .7rem;
+    }
+    .auth-float {
+        position: absolute;
+        z-index: 2;
+        display: grid;
+        width: 2.45rem;
+        height: 2.45rem;
+        place-items: center;
+        border: 1px solid rgba(215,232,241,.95);
+        border-radius: 13px;
+        color: #176f81;
+        background: rgba(255,255,255,.94);
+        box-shadow: 0 7px 18px rgba(18,55,78,.12);
+        font-size: 1rem;
+    }
+    .auth-float-one { top: 16%; left: 8%; }
+    .auth-float-two { top: 29%; right: 7%; color: #3871c9; }
+    .auth-float-three { right: 12%; bottom: 14%; color: #16887d; }
+    .auth-float-four { bottom: 18%; left: 8%; color: #b47932; }
+    .st-key-auth-card [data-testid="stTabs"] {
+        margin-bottom: .5rem;
+    }
+    .st-key-auth-card [data-testid="stForm"] {
+        padding-top: .3rem;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+        min-height: 3.2rem;
+        border-radius: 12px !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputField"] {
+        padding: .78rem .85rem !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stFormSubmitButton"] {
+        margin-top: .35rem;
+    }
+    .st-key-auth-card [data-testid="stVerticalBlockBorderWrapper"] {
+        padding: .75rem .85rem;
+        border-color: #C3D2E2;
+        border-radius: 20px;
+        background: rgba(248,250,253,.94);
+        box-shadow: 0 13px 32px rgba(33,58,87,.115), 0 2px 7px rgba(33,58,87,.035);
+    }
+    .st-key-auth-card [data-testid="stForm"] label {
+        color: #173653 !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+        border-color: #C3D2E2 !important;
+        background-color: #FFFFFF !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputRootElement"]:focus-within {
+        border-color: #2864e8 !important;
+        box-shadow: 0 0 0 2px rgba(40,100,232,.12) !important;
     }
     .section-eyebrow {
         color: #287c92;
@@ -655,6 +962,7 @@ st.markdown(
         fill: #fff !important;
     }
     [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+        min-height: 3rem;
         background-color: #fff !important;
         border: 1px solid #cbd8e6 !important;
         border-radius: 10px !important;
@@ -664,6 +972,7 @@ st.markdown(
         box-shadow: 0 0 0 2px rgba(40,100,232,.14) !important;
     }
     [data-testid="stForm"] [data-testid="stTextInputField"] {
+        padding: .65rem .75rem !important;
         background-color: transparent !important;
         color: #10243a !important;
         -webkit-text-fill-color: #10243a !important;
@@ -681,6 +990,11 @@ st.markdown(
     [data-testid="stForm"] [data-testid="stTextInputRootElement"] button[aria-label*="password" i] svg {
         color: #10243a !important;
         fill: currentColor;
+    }
+    [data-testid="stForm"] label {
+        color: #17324d !important;
+        font-size: .9rem;
+        font-weight: 650;
     }
     .stButton > button { border-radius: 10px; }
     [data-testid="stDataEditor"],
@@ -712,6 +1026,55 @@ st.markdown(
         }
         .hero { padding: 1.2rem 1.15rem; border-radius: 17px; }
         .hero:after { width: 210px; height: 210px; right: -105px; top: -120px; }
+        .auth-hero {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1.15rem;
+        }
+        .stApp:has(.st-key-auth-layout)::before {
+            top: 28%;
+            right: -42px;
+            width: 125px;
+            height: 110px;
+            opacity: .3;
+        }
+        .auth-brand { align-items: flex-start; gap: .75rem; }
+        .auth-brand-icon {
+            flex-basis: 2.8rem;
+            width: 2.8rem;
+            height: 2.8rem;
+            border-radius: 12px;
+            font-size: 1.35rem;
+        }
+        .auth-hero h1 { font-size: 1.45rem; }
+        .auth-hero p { font-size: .85rem; }
+        .auth-badges { justify-content: flex-start; gap: .35rem; }
+        .auth-badge { padding: .42rem .58rem; font-size: .69rem; }
+        .st-key-auth-layout [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .st-key-auth-layout [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            flex: 1 1 100% !important;
+            min-width: min(100%, 20rem) !important;
+        }
+        .auth-features {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: .75rem;
+        }
+        .auth-feature { gap: .55rem; }
+        .auth-feature-icon {
+            flex-basis: 2.25rem;
+            width: 2.25rem;
+            height: 2.25rem;
+            font-size: .95rem;
+        }
+        .auth-feature-copy strong { font-size: .84rem; }
+        .auth-feature-copy p { font-size: .75rem; }
+        .auth-illustration { min-height: 280px; }
+        .auth-page-waves { height: 48px; }
         [data-testid="stTabs"] [data-baseweb="tab-list"] {
             gap: .1rem;
             overflow-x: auto;
@@ -734,6 +1097,485 @@ st.markdown(
         [data-testid="stVerticalBlockBorderWrapper"] {
             padding: .35rem .4rem;
         }
+    }
+    @media (min-width: 701px) and (max-width: 1100px) {
+        .auth-hero { align-items: flex-start; flex-direction: column; }
+        .auth-badges { justify-content: flex-start; max-width: none; }
+        .st-key-auth-layout [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap;
+            gap: 1.2rem;
+        }
+        .st-key-auth-layout [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            flex: 1 1 45% !important;
+            min-width: min(100%, 20rem) !important;
+        }
+        .auth-features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    :root {
+        color-scheme: dark;
+        --ink: #F1F5F9;
+        --muted: #91A4BA;
+        --blue: #3B82F6;
+        --teal: #14B8A6;
+        --line: #334A63;
+        --surface: #192B42;
+        --surface-raised: #203650;
+        --surface-input: #243B55;
+        --cyan: #67E8F9;
+    }
+    html, body {
+        min-height: 100%;
+        background: #101B2D;
+        color: #F1F5F9;
+    }
+    .stApp {
+        position: relative;
+        isolation: isolate;
+        min-height: 100vh;
+        overflow-x: clip;
+        background:
+            radial-gradient(ellipse at 12% 0%, rgba(59,130,246,.09), transparent 38%),
+            radial-gradient(ellipse at 87% 14%, rgba(20,184,166,.055), transparent 32%),
+            linear-gradient(145deg, #101B2D 0%, #142238 55%, #101B2D 100%);
+        color: #F1F5F9;
+    }
+    .stApp:before {
+        position: fixed;
+        z-index: -1;
+        top: 14%;
+        right: 3%;
+        width: 160px;
+        height: 140px;
+        background-image: radial-gradient(rgba(103,232,249,.16) 1px, transparent 1.4px);
+        background-size: 15px 15px;
+        content: "";
+        opacity: .3;
+        pointer-events: none;
+    }
+    .stApp:after {
+        position: fixed;
+        z-index: -1;
+        right: -5vw;
+        bottom: -6px;
+        left: -5vw;
+        height: 74px;
+        background:
+            radial-gradient(105% 165% at 15% 120%, rgba(59,130,246,.055) 0 59%, transparent 60%),
+            radial-gradient(95% 150% at 76% 145%, rgba(20,184,166,.045) 0 58%, transparent 59%);
+        content: "";
+        pointer-events: none;
+    }
+    .stApp:has(.st-key-auth-layout) {
+        background-color: #101B2D;
+        background-image:
+            radial-gradient(circle at 8% 17%, rgba(59,130,246,.08) 0 5.2rem, transparent 5.3rem),
+            radial-gradient(circle at 88% 19%, rgba(20,184,166,.06) 0 8.5rem, transparent 8.6rem),
+            radial-gradient(circle at 93% 73%, rgba(103,232,249,.035) 0 4.7rem, transparent 4.8rem),
+            radial-gradient(ellipse at 49% 39%, rgba(32,54,80,.48), transparent 57%),
+            linear-gradient(122deg, #101B2D 0%, #162940 52%, #101B2D 100%);
+    }
+    [data-testid="stAppViewContainer"],
+    [data-testid="stHeader"],
+    [data-testid="stMain"] {
+        background: transparent;
+        color: #F1F5F9;
+    }
+    [data-testid="stMainBlockContainer"] {
+        position: relative;
+        z-index: 1;
+        color: #F1F5F9;
+    }
+    h1, h2, h3, h4, h5, h6,
+    [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2,
+    [data-testid="stMarkdownContainer"] h3 {
+        color: #F1F5F9;
+    }
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stCaptionContainer"],
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stMarkdownContainer"] li {
+        color: #C0CCDA;
+    }
+    [data-testid="stWidgetLabel"] label,
+    [data-testid="stForm"] label,
+    [data-testid="stCheckbox"] label,
+    [data-testid="stRadio"] label {
+        color: #DCE6F1 !important;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0E192A 0%, #142238 100%);
+        border-right: 1px solid #334A63;
+    }
+    [data-testid="stSidebar"] *,
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: #DCE6F1;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong {
+        color: #F1F5F9;
+    }
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+        color: #91A4BA;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: .45rem .6rem;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+        background: rgba(255,255,255,.055);
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+        border-color: rgba(103,232,249,.2);
+        background: linear-gradient(100deg, rgba(59,130,246,.24), rgba(20,184,166,.14));
+    }
+    [data-testid="stMetric"],
+    .soft-card,
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-color: #334A63;
+        background: linear-gradient(145deg, #192B42 0%, #17283E 100%);
+        box-shadow: 0 8px 22px rgba(4,12,24,.2), inset 0 1px 0 rgba(255,255,255,.025);
+    }
+    [data-testid="stMetric"]:hover {
+        border-color: #45617D;
+        box-shadow: 0 10px 24px rgba(4,12,24,.27);
+    }
+    [data-testid="stMetricLabel"],
+    [data-testid="stMetricDelta"] {
+        color: #C0CCDA;
+    }
+    [data-testid="stMetricValue"],
+    .soft-card strong,
+    .service-icon-copy strong {
+        color: #F1F5F9;
+    }
+    .soft-card p,
+    .service-icon-copy small {
+        color: #C0CCDA;
+    }
+    .section-eyebrow,
+    .hero-kicker {
+        color: #67E8F9;
+    }
+    .hero {
+        border-color: rgba(255,255,255,.14);
+        box-shadow: 0 13px 30px rgba(4,12,24,.24), inset 0 1px 0 rgba(255,255,255,.11);
+    }
+    [data-testid="stTabs"] [data-baseweb="tab-list"] {
+        border-color: #334A63;
+        background: #142238;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"] {
+        color: #B4C3D6;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] {
+        border: 1px solid #334A63;
+        color: #F1F5F9;
+        background: #203650;
+        box-shadow: 0 2px 8px rgba(4,12,24,.24);
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"]:focus-visible {
+        outline-color: rgba(103,232,249,.6);
+    }
+    .stButton > button[kind="primary"],
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button,
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button {
+        border-color: transparent;
+        color: #FFFFFF !important;
+        background: linear-gradient(105deg, #3B82F6 0%, #14B8A6 100%);
+        box-shadow: 0 7px 18px rgba(20,184,166,.14), inset 0 1px 0 rgba(255,255,255,.12);
+    }
+    .stButton > button[kind="primary"]:hover,
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button:hover,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button:hover,
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button:hover {
+        color: #FFFFFF !important;
+        background: linear-gradient(105deg, #4A8BFA 0%, #10A997 100%);
+        box-shadow: 0 9px 20px rgba(20,184,166,.2);
+    }
+    .stButton > button[kind="primary"]:focus-visible,
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button:focus-visible,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button:focus-visible,
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button:focus-visible {
+        outline: 3px solid rgba(103,232,249,.58);
+        outline-offset: 3px;
+    }
+    .stButton > button[kind="secondary"],
+    [data-testid="stDownloadButton"] button,
+    [data-testid="stFileUploader"] button {
+        border: 1px solid #45617D;
+        color: #E5EDF6 !important;
+        background: #203650;
+    }
+    .stButton > button[kind="secondary"]:hover,
+    [data-testid="stDownloadButton"] button:hover,
+    [data-testid="stFileUploader"] button:hover {
+        border-color: #14B8A6;
+        color: #F1F5F9 !important;
+        background: #263D58;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"],
+    [data-testid="stTextInputRootElement"],
+    [data-testid="stNumberInput"] [data-baseweb="input"],
+    [data-testid="stDateInput"] [data-baseweb="input"],
+    [data-testid="stTimeInput"] [data-baseweb="input"],
+    [data-testid="stTextArea"] textarea,
+    [data-baseweb="select"] > div {
+        border-color: #45617D !important;
+        border-radius: 10px !important;
+        background: #243B55 !important;
+        color: #F1F5F9 !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"]:focus-within,
+    [data-testid="stTextInputRootElement"]:focus-within,
+    [data-testid="stTextArea"] textarea:focus,
+    [data-baseweb="select"] > div:focus-within {
+        border-color: #14B8A6 !important;
+        box-shadow: 0 0 0 2px rgba(20,184,166,.18) !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputField"],
+    [data-testid="stTextInputField"],
+    [data-testid="stNumberInput"] input,
+    [data-testid="stDateInput"] input,
+    [data-testid="stTimeInput"] input,
+    [data-testid="stTextArea"] textarea {
+        background-color: transparent !important;
+        color: #F1F5F9 !important;
+        -webkit-text-fill-color: #F1F5F9 !important;
+        caret-color: #67E8F9;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputField"]::placeholder,
+    [data-testid="stTextInputField"]::placeholder,
+    [data-testid="stTextArea"] textarea::placeholder {
+        color: #91A4BA !important;
+        opacity: 1;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"] button[aria-label*="password" i],
+    [data-testid="stTextInputRootElement"] button[aria-label*="password" i] {
+        color: #DCE6F1 !important;
+        background: transparent !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"] button[aria-label*="password" i] svg,
+    [data-testid="stTextInputRootElement"] button[aria-label*="password" i] svg {
+        color: #DCE6F1 !important;
+        fill: currentColor;
+    }
+    [data-baseweb="select"] input,
+    [data-baseweb="select"] div,
+    [data-baseweb="select"] svg {
+        color: #F1F5F9;
+        fill: currentColor;
+    }
+    [data-baseweb="popover"],
+    [data-baseweb="menu"],
+    [role="listbox"] {
+        border-color: #334A63 !important;
+        background: #192B42 !important;
+        color: #F1F5F9 !important;
+        box-shadow: 0 8px 22px rgba(4,12,24,.28);
+    }
+    [role="option"]:hover,
+    [role="option"][aria-selected="true"] {
+        background: #243B55 !important;
+        color: #F1F5F9 !important;
+    }
+    [data-testid="stCheckbox"] [data-baseweb="checkbox"] > div,
+    [data-testid="stRadio"] [data-baseweb="radio"] > div {
+        border-color: #60758C;
+        background: #243B55;
+    }
+    [data-testid="stCheckbox"] input:checked + div,
+    [data-testid="stRadio"] input:checked + div {
+        border-color: #14B8A6;
+        background: #14B8A6;
+    }
+    [data-testid="stExpander"] {
+        border: 1px solid #334A63;
+        border-radius: 13px;
+        background: #192B42;
+        box-shadow: 0 4px 14px rgba(4,12,24,.14);
+    }
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] summary:hover {
+        color: #F1F5F9;
+        background: transparent;
+    }
+    [data-testid="stExpander"] [data-testid="stMarkdownContainer"] p {
+        color: #C0CCDA;
+    }
+    [data-testid="stFileUploader"] section {
+        border-color: #587997;
+        background: linear-gradient(145deg, #192B42, #142238);
+    }
+    [data-testid="stFileUploader"] section:hover {
+        border-color: #3B82F6;
+        background: #203650;
+    }
+    [data-testid="stDataEditor"],
+    [data-testid="stDataFrame"],
+    div[data-testid="stDataFrame"],
+    div[data-testid="stDataEditor"] {
+        border: 1px solid #3B536D;
+        border-radius: 13px;
+        background: #142238;
+        box-shadow: 0 5px 15px rgba(4,12,24,.16);
+        overflow: hidden;
+    }
+    [data-testid="stDataEditor"] [role="grid"],
+    [data-testid="stDataFrame"] [role="grid"] {
+        color: #F1F5F9;
+        background: #142238;
+    }
+    .st-key-subscription_editor {
+        margin-top: .35rem;
+        margin-bottom: .65rem;
+    }
+    .st-key-subscription_editor [data-testid="stDataEditor"] {
+        border-color: #3B536D;
+        background: #142238;
+    }
+    [data-testid="stPlotlyChart"] {
+        border-color: #334A63;
+        background: #192B42;
+        box-shadow: 0 5px 16px rgba(4,12,24,.16);
+    }
+    [data-testid="stAlert"] {
+        border: 1px solid #3B536D;
+        border-radius: 12px;
+        background: #192B42;
+        color: #F1F5F9;
+    }
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+        color: #DCE6F1;
+    }
+    [data-testid="stAlert"][kind="success"] {
+        border-color: rgba(20,184,166,.34);
+        background: rgba(20,184,166,.09);
+    }
+    [data-testid="stAlert"][kind="warning"] {
+        border-color: rgba(245,190,85,.32);
+        background: rgba(245,190,85,.09);
+    }
+    [data-testid="stAlert"][kind="error"] {
+        border-color: rgba(255,112,112,.32);
+        background: rgba(255,112,112,.09);
+    }
+    [data-testid="stAlert"][kind="info"] {
+        border-color: rgba(103,232,249,.25);
+        background: rgba(103,232,249,.07);
+    }
+    [data-testid="stToast"] {
+        border: 1px solid #334A63;
+        background: #192B42;
+        color: #F1F5F9;
+    }
+    [data-testid="stTable"] th {
+        border-bottom: 1px solid #334A63;
+        background: #203650;
+        color: #F1F5F9;
+    }
+    [data-testid="stTable"] td {
+        border-bottom: 1px solid #2B4058;
+        background: #192B42;
+        color: #DCE6F1;
+    }
+    [data-testid="stCode"],
+    [data-testid="stCodeBlock"] pre,
+    pre {
+        border-color: #334A63;
+        background: #142238;
+        color: #DCE6F1;
+    }
+    code {
+        color: #8DE4D9;
+    }
+    hr {
+        border-color: #334A63;
+    }
+    a {
+        color: #67E8F9;
+    }
+    a:hover {
+        color: #A2F1F8;
+    }
+    .auth-hero {
+        border-color: rgba(255,255,255,.15);
+        box-shadow: 0 13px 30px rgba(4,12,24,.25), inset 0 1px 0 rgba(255,255,255,.1);
+    }
+    .auth-feature-icon {
+        border-color: #38536E;
+        color: #67E8F9;
+        background: linear-gradient(145deg, #203650, #192B42);
+        box-shadow: 0 4px 11px rgba(4,12,24,.2);
+    }
+    .auth-feature-copy strong,
+    .auth-card-heading h2 {
+        color: #F1F5F9;
+    }
+    .auth-feature-copy p,
+    .auth-card-heading p,
+    .auth-security {
+        color: #C0CCDA;
+    }
+    .auth-security {
+        border-top-color: #334A63;
+    }
+    .service-icon-card {
+        border-color: #334A63;
+        background: linear-gradient(145deg, #192B42, #142238);
+        box-shadow: 0 3px 11px rgba(4,12,24,.17);
+    }
+    .service-icon {
+        border-color: #334A63;
+        background: #243B55;
+    }
+    .st-key-auth-card [data-testid="stVerticalBlockBorderWrapper"] {
+        border-color: #3B536D;
+        background: rgba(25,43,66,.96);
+        box-shadow: 0 15px 36px rgba(4,12,24,.28), 0 2px 8px rgba(4,12,24,.12);
+    }
+    .st-key-auth-card [data-testid="stTabs"] [data-baseweb="tab-list"] {
+        border-color: #334A63;
+        background: #142238;
+    }
+    .st-key-auth-card [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] {
+        background: #203650;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+        background-color: #243B55 !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputField"] {
+        color: #F1F5F9 !important;
+        -webkit-text-fill-color: #F1F5F9 !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] label {
+        color: #DCE6F1 !important;
+    }
+    .auth-illustration {
+        border-color: #334A63;
+        background:
+            radial-gradient(circle at 50% 42%, rgba(20,184,166,.1), transparent 58%),
+            linear-gradient(145deg, #203650, #192B42);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 12px 28px rgba(4,12,24,.22);
+    }
+    .auth-illustration:before,
+    .auth-illustration:after {
+        border-color: rgba(103,232,249,.11);
+    }
+    .auth-float {
+        border-color: #3B536D;
+        color: #67E8F9;
+        background: #243B55;
+        box-shadow: 0 7px 17px rgba(4,12,24,.27);
+    }
+    .auth-page-waves path:first-child {
+        fill: #14B8A6 !important;
+        fill-opacity: .07 !important;
+    }
+    .auth-page-waves path:last-child {
+        fill: #3B82F6 !important;
+        fill-opacity: .075 !important;
     }
     </style>
     """,
@@ -1167,13 +2009,28 @@ def prepare_model_input(data):
 
 def style_chart(chart):
     chart.update_layout(
-        template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        template="plotly_dark",
+        paper_bgcolor="#192B42",
+        plot_bgcolor="#192B42",
         font_family="Aptos, Segoe UI, sans-serif",
+        font_color="#B4C3D6",
         margin=dict(l=12, r=12, t=38, b=10),
         legend_title_text="",
         height=310,
+    )
+    chart.update_xaxes(
+        gridcolor="#334A63",
+        linecolor="#45617D",
+        zerolinecolor="#45617D",
+        tickfont_color="#B4C3D6",
+        title_font_color="#DCE6F1",
+    )
+    chart.update_yaxes(
+        gridcolor="#334A63",
+        linecolor="#45617D",
+        zerolinecolor="#45617D",
+        tickfont_color="#B4C3D6",
+        title_font_color="#DCE6F1",
     )
     return chart
 
@@ -1351,80 +2208,234 @@ except (OSError, sqlite3.Error) as error:
 if not st.session_state.get("auth_user_id"):
     st.markdown(
         """
-        <div class="hero">
-          <div class="hero-kicker">Private subscription workspace</div>
-          <h1>AI Subscription Waste Detector</h1>
-          <p>Sign in or create an account to manage your subscription data.</p>
+        <div class="hero auth-hero">
+          <div class="auth-brand">
+            <div class="auth-brand-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 19V11M10 19V5M16 19v-7M22 19H2"/>
+              </svg>
+            </div>
+            <div>
+              <h1>AI Subscription Waste Detector</h1>
+              <p>Analyse your subscriptions. Detect wasted spending. Save more.</p>
+            </div>
+          </div>
+          <div class="auth-badges" aria-label="Product features">
+            <span class="auth-badge"><span aria-hidden="true">✦</span> AI Powered Analysis</span>
+            <span class="auth-badge"><span aria-hidden="true">◷</span> Track Spending</span>
+            <span class="auth-badge"><span aria-hidden="true">✓</span> Cancel Unnecessary</span>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    login_tab, registration_tab = st.tabs(["Login", "Create account"])
-    with login_tab:
-        with st.form("login_form"):
-            login_username = st.text_input("Username", key="login_username")
-            login_password = st.text_input(
-                "Password", type="password", key="login_password"
+    with st.container(key="auth-layout"):
+        feature_column, auth_column, illustration_column = st.columns(
+            [1, 1.12, 1], gap="large", vertical_alignment="center"
+        )
+        with feature_column:
+            st.markdown(
+                """
+                <div class="auth-features">
+                  <div class="auth-feature">
+                    <span class="auth-feature-icon" aria-hidden="true">◎</span>
+                    <div class="auth-feature-copy">
+                      <strong>Detect Waste</strong>
+                      <p>Identify underused or unnecessary subscriptions using AI analysis.</p>
+                    </div>
+                  </div>
+                  <div class="auth-feature">
+                    <span class="auth-feature-icon" aria-hidden="true">▥</span>
+                    <div class="auth-feature-copy">
+                      <strong>Track Spending</strong>
+                      <p>Visualize monthly and long-term subscription costs.</p>
+                    </div>
+                  </div>
+                  <div class="auth-feature">
+                    <span class="auth-feature-icon" aria-hidden="true">✧</span>
+                    <div class="auth-feature-copy">
+                      <strong>Get Insights</strong>
+                      <p>Receive personalized recommendations to save money.</p>
+                    </div>
+                  </div>
+                  <div class="auth-feature">
+                    <span class="auth-feature-icon" aria-hidden="true">✓</span>
+                    <div class="auth-feature-copy">
+                      <strong>Stay in Control</strong>
+                      <p>Manage subscriptions effectively and avoid waste.</p>
+                    </div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
-            login_submitted = st.form_submit_button(
-                "Log in",
-                type="primary",
-                icon=":material/login:",
-                width="stretch",
-                key="login-submit",
-            )
-        if login_submitted:
-            try:
-                user = authenticate_user(login_username, login_password)
-                if user is None:
-                    st.error("Invalid username or password.")
-                else:
-                    start_user_session(*user)
-                    st.rerun()
-            except (OSError, sqlite3.Error, ValueError) as error:
-                st.error(f"Could not log in: {error}")
+        with auth_column:
+            with st.container(border=True, key="auth-card"):
+                login_tab, registration_tab = st.tabs(["Login", "Create account"])
+                with login_tab:
+                    st.markdown(
+                        '<div class="auth-card-heading"><h2>Welcome Back!</h2>'
+                        '<p>Sign in to continue to your subscription workspace.</p></div>',
+                        unsafe_allow_html=True,
+                    )
+                    with st.form("login_form"):
+                        login_username = st.text_input(
+                            "Username",
+                            placeholder="Enter your username",
+                            key="login_username",
+                        )
+                        login_password = st.text_input(
+                            "Password",
+                            type="password",
+                            placeholder="Enter your password",
+                            key="login_password",
+                        )
+                        login_submitted = st.form_submit_button(
+                            "Log in",
+                            type="primary",
+                            icon=":material/login:",
+                            width="stretch",
+                            key="login-submit",
+                        )
+                    if login_submitted:
+                        try:
+                            user = authenticate_user(login_username, login_password)
+                            if user is None:
+                                st.error("Invalid username or password.")
+                            else:
+                                start_user_session(*user)
+                                st.rerun()
+                        except (OSError, sqlite3.Error, ValueError) as error:
+                            st.error(f"Could not log in: {error}")
 
-    with registration_tab:
-        with st.form("registration_form"):
-            registration_username = st.text_input(
-                "Username", key="registration_username"
-            )
-            registration_password = st.text_input(
-                "Password",
-                type="password",
-                help="Use at least 8 characters.",
-                key="registration_password",
-            )
-            confirmation_password = st.text_input(
-                "Confirm password",
-                type="password",
-                key="confirmation_password",
-            )
-            registration_submitted = st.form_submit_button(
-                "Create account",
-                type="primary",
-                icon=":material/person_add:",
-                width="stretch",
-                key="registration-submit",
-            )
-        if registration_submitted:
-            if registration_password != confirmation_password:
-                st.error("The passwords do not match.")
-            else:
-                try:
-                    new_user_id = register_user(
-                        registration_username, registration_password
+                with registration_tab:
+                    st.markdown(
+                        '<div class="auth-card-heading"><h2>Create your account</h2>'
+                        '<p>Save and review your subscriptions in one place.</p></div>',
+                        unsafe_allow_html=True,
                     )
-                    start_user_session(
-                        new_user_id, registration_username.strip()
-                    )
-                    st.rerun()
-                except UsernameAlreadyExists as error:
-                    st.error(str(error))
-                except RegistrationError as error:
-                    st.error(str(error))
-                except (OSError, sqlite3.Error, ValueError) as error:
-                    st.error(f"Could not create the account: {error}")
+                    with st.form("registration_form"):
+                        registration_username = st.text_input(
+                            "Username",
+                            placeholder="Choose a username",
+                            key="registration_username",
+                        )
+                        registration_password = st.text_input(
+                            "Password",
+                            type="password",
+                            placeholder="Create a password",
+                            help="Use at least 8 characters.",
+                            key="registration_password",
+                        )
+                        confirmation_password = st.text_input(
+                            "Confirm password",
+                            type="password",
+                            placeholder="Enter your password again",
+                            key="confirmation_password",
+                        )
+                        registration_submitted = st.form_submit_button(
+                            "Create account",
+                            type="primary",
+                            icon=":material/person_add:",
+                            width="stretch",
+                            key="registration-submit",
+                        )
+                    if registration_submitted:
+                        if registration_password != confirmation_password:
+                            st.error("The passwords do not match.")
+                        else:
+                            try:
+                                new_user_id = register_user(
+                                    registration_username, registration_password
+                                )
+                                start_user_session(
+                                    new_user_id, registration_username.strip()
+                                )
+                                st.rerun()
+                            except UsernameAlreadyExists as error:
+                                st.error(str(error))
+                            except RegistrationError as error:
+                                st.error(str(error))
+                            except (OSError, sqlite3.Error, ValueError) as error:
+                                st.error(f"Could not create the account: {error}")
+                st.markdown(
+                    '<div class="auth-security"><span class="auth-security-icon" '
+                    'aria-hidden="true"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+                    '<path d="M12 3 19 6v5c0 4.7-2.9 8-7 10-4.1-2-7-5.3-7-10V6l7-3Z"/>'
+                    '<path d="m9 12 2 2 4-4"/></svg></span>'
+                    '<span>Your data is secure and private</span></div>',
+                    unsafe_allow_html=True,
+                )
+        with illustration_column:
+            st.markdown(
+                """
+                <div class="auth-illustration" role="img"
+                     aria-label="Illustration of a subscription spending analytics dashboard">
+                  <span class="auth-float auth-float-one" aria-hidden="true">▶</span>
+                  <span class="auth-float auth-float-two" aria-hidden="true">♫</span>
+                  <span class="auth-float auth-float-three" aria-hidden="true">☁</span>
+                  <span class="auth-float auth-float-four" aria-hidden="true">✦</span>
+                  <svg viewBox="0 0 380 300" xmlns="http://www.w3.org/2000/svg"
+                       aria-hidden="true" focusable="false">
+                    <defs>
+                      <linearGradient id="laptopScreen" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#173a5d"/>
+                        <stop offset="1" stop-color="#176f78"/>
+                      </linearGradient>
+                      <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#44d2bd" stop-opacity=".42"/>
+                        <stop offset="1" stop-color="#44d2bd" stop-opacity=".02"/>
+                      </linearGradient>
+                    </defs>
+                    <ellipse cx="190" cy="254" rx="137" ry="15" fill="#b9d1db" opacity=".42"/>
+                    <rect x="76" y="46" width="228" height="166" rx="15" fill="#12314e"/>
+                    <rect x="84" y="54" width="212" height="150" rx="9" fill="#f8fcff"/>
+                    <rect x="84" y="54" width="212" height="24" rx="9" fill="url(#laptopScreen)"/>
+                    <circle cx="97" cy="66" r="2.5" fill="#a5e8df"/>
+                    <circle cx="106" cy="66" r="2.5" fill="#72c9c4"/>
+                    <rect x="96" y="89" width="67" height="42" rx="7" fill="#edf5f8"/>
+                    <text x="104" y="102" fill="#647b8c" font-size="7" font-family="Arial,sans-serif">MONTHLY SPEND</text>
+                    <text x="104" y="120" fill="#173a5d" font-size="14" font-weight="700" font-family="Arial,sans-serif">$248</text>
+                    <rect x="170" y="89" width="114" height="69" rx="7" fill="#fff" stroke="#e4edf2"/>
+                    <path d="M180 144H274M180 126H274M180 108H274" stroke="#e7eef3" stroke-width="1"/>
+                    <path d="M182 139L198 128L214 133L230 111L247 119L270 97V151H182Z" fill="url(#chartFill)"/>
+                    <path d="M182 139L198 128L214 133L230 111L247 119L270 97" fill="none" stroke="#22a99d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="230" cy="111" r="3" fill="#fff" stroke="#22a99d" stroke-width="2"/>
+                    <rect x="96" y="140" width="67" height="50" rx="7" fill="#fff" stroke="#e4edf2"/>
+                    <text x="104" y="153" fill="#647b8c" font-size="7" font-family="Arial,sans-serif">TOP SERVICES</text>
+                    <rect x="104" y="161" width="34" height="4" rx="2" fill="#dbe8ee"/>
+                    <rect x="104" y="161" width="23" height="4" rx="2" fill="#2c82bd"/>
+                    <rect x="104" y="171" width="44" height="4" rx="2" fill="#dbe8ee"/>
+                    <rect x="104" y="171" width="29" height="4" rx="2" fill="#32b5a5"/>
+                    <rect x="104" y="181" width="39" height="4" rx="2" fill="#dbe8ee"/>
+                    <rect x="104" y="181" width="15" height="4" rx="2" fill="#e1ae61"/>
+                    <rect x="170" y="165" width="114" height="25" rx="7" fill="#eaf7f5"/>
+                    <circle cx="183" cy="177" r="5" fill="#23a99b"/>
+                    <path d="M181 177l1.5 1.5L185 175" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                    <text x="193" y="175" fill="#35716f" font-size="7" font-family="Arial,sans-serif">POTENTIAL SAVINGS</text>
+                    <text x="193" y="184" fill="#173a5d" font-size="9" font-weight="700" font-family="Arial,sans-serif">$36 / month</text>
+                    <path d="M61 215H319L300 233H80Z" fill="#d6e5ec"/>
+                    <path d="M61 215H319L309 225H71Z" fill="#eff6f8"/>
+                    <rect x="155" y="217" width="70" height="3" rx="1.5" fill="#c5d8e1"/>
+                  </svg>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    st.markdown(
+        """
+        <div class="auth-page-waves" aria-hidden="true">
+          <svg viewBox="0 0 1440 60" preserveAspectRatio="none"
+               xmlns="http://www.w3.org/2000/svg">
+            <path d="M0 24C210 56 370 10 590 28s360 28 520 3 220-29 330-4v33H0Z"
+                  fill="#91B4C8" fill-opacity=".16"/>
+            <path d="M0 38c190-26 350 13 540 4s330-24 510-5 270 18 390 2v21H0Z"
+                  fill="#9EB9D2" fill-opacity=".13"/>
+          </svg>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.stop()
 
 st.sidebar.caption(f"Signed in as {st.session_state.auth_username}")
