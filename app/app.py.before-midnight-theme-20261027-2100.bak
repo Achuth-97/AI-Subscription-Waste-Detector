@@ -1,0 +1,2658 @@
+import base64
+import html
+from datetime import datetime
+from http.client import HTTPException
+import json
+import re
+import sqlite3
+import sys
+import xml.etree.ElementTree as ET
+from hashlib import sha256
+from io import BytesIO
+from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import joblib
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from src.auth_store import (
+    RegistrationError,
+    UsernameAlreadyExists,
+    authenticate_user,
+    initialize_database,
+    load_subscriptions,
+    register_user,
+    save_subscriptions,
+)
+
+try:
+    from simpleicons.all import icons as SIMPLE_ICONS
+except ImportError:
+    SIMPLE_ICONS = None
+
+
+MODEL_PATH = ROOT / "models" / "subscription_model.pkl"
+HISTORY_PATH = ROOT / "dataset" / "usage_history.csv"
+
+REQUIRED_COLUMNS = [
+    "subscription_name",
+    "category",
+    "monthly_cost",
+    "usage_days",
+    "usage_hours",
+    "months_subscribed",
+    "previous_usage_days",
+]
+NUMERIC_COLUMNS = [
+    "monthly_cost",
+    "usage_days",
+    "usage_hours",
+    "months_subscribed",
+    "previous_usage_days",
+]
+
+DEFAULT_DATA = pd.DataFrame(
+    {
+        "subscription_name": ["Netflix", "Spotify", "Udemy"],
+        "category": ["Entertainment", "Music", "Education"],
+        "monthly_cost": [649, 119, 999],
+        "usage_days": [2, 25, 0],
+        "usage_hours": [4, 38, 0],
+        "months_subscribed": [8, 14, 4],
+        "previous_usage_days": [5, 24, 1],
+    }
+)
+
+
+def build_pdf_report(data, total_spending, review_cost):
+    buffer = BytesIO()
+    page_size = landscape(A4)
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=page_size,
+        leftMargin=0.35 * inch,
+        rightMargin=0.35 * inch,
+        topMargin=0.45 * inch,
+        bottomMargin=0.45 * inch,
+        title="Subscription Waste Analysis Report",
+    )
+
+    regular_font = "DejaVuSans"
+    bold_font = "DejaVuSans-Bold"
+    if regular_font not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(
+            TTFont(regular_font, str(ROOT / "assets" / "fonts" / "DejaVuSans.ttf"))
+        )
+    if bold_font not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(
+            TTFont(
+                bold_font,
+                str(ROOT / "assets" / "fonts" / "DejaVuSans-Bold.ttf"),
+            )
+        )
+    pdfmetrics.registerFontFamily(
+        regular_font,
+        normal=regular_font,
+        bold=bold_font,
+        italic=regular_font,
+        boldItalic=bold_font,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ReportTitle",
+        parent=styles["Title"],
+        fontName=bold_font,
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#17324D"),
+        alignment=TA_LEFT,
+        spaceAfter=4,
+    )
+    body_style = ParagraphStyle(
+        "ReportBody",
+        parent=styles["BodyText"],
+        fontName=regular_font,
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#263746"),
+    )
+    header_style = ParagraphStyle(
+        "ReportTableHeader",
+        parent=body_style,
+        fontName=bold_font,
+        textColor=colors.white,
+        fontSize=7.5,
+        leading=9,
+    )
+    date_style = ParagraphStyle(
+        "ReportDate",
+        parent=body_style,
+        textColor=colors.HexColor("#5D6B78"),
+        spaceAfter=12,
+    )
+
+    def format_value(value):
+        if pd.isna(value):
+            return "-"
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            return f"{float(value):g}"
+        return str(value)
+
+    columns = [
+        ("Subscription", "subscription_name"),
+        ("Category", "category"),
+        ("Monthly Cost (₹)", "monthly_cost"),
+        ("Usage Days", "usage_days"),
+        ("Usage Hours", "usage_hours"),
+        ("Months Subscribed", "months_subscribed"),
+        ("Previous Usage Days", "previous_usage_days"),
+        ("AI Waste Risk (%)", "waste_risk"),
+        ("Prediction", "prediction"),
+        ("Usage Change (Days)", "usage_change"),
+        ("Cost to Review (₹)", "review_cost"),
+    ]
+    table_rows = [[Paragraph(label, header_style) for label, _ in columns]]
+    for _, row in data.iterrows():
+        cells = []
+        for _, key in columns:
+            value = row.get(key)
+            if key == "monthly_cost":
+                rendered_value = f"₹{float(value):,.0f}"
+            elif key == "review_cost":
+                rendered_value = f"₹{float(value):,.0f}"
+            elif key == "waste_risk":
+                rendered_value = f"{float(value):.1f}%"
+            elif key == "usage_change":
+                rendered_value = f"{float(value):+.1f}"
+            else:
+                rendered_value = format_value(value)
+            cells.append(Paragraph(html.escape(rendered_value), body_style))
+        table_rows.append(cells)
+
+    report_table = Table(
+        table_rows,
+        colWidths=[
+            1.25 * inch,
+            0.90 * inch,
+            0.95 * inch,
+            0.65 * inch,
+            0.70 * inch,
+            0.95 * inch,
+            0.95 * inch,
+            0.90 * inch,
+            1.25 * inch,
+            0.90 * inch,
+            1.00 * inch,
+        ],
+        repeatRows=1,
+        hAlign="LEFT",
+    )
+    report_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), regular_font),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17324D")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6DEE6")),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#F3F7FA")],
+                ),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+
+    generated_at = datetime.now().strftime("%d %B %Y, %H:%M")
+    summary = Table(
+        [[
+            Paragraph(f"<b>Monthly spending</b><br/>₹{total_spending:,.0f}", body_style),
+            Paragraph(f"<b>Total subscriptions</b><br/>{len(data)}", body_style),
+            Paragraph(
+                f"<b>Estimated cost flagged for review</b><br/>₹{review_cost:,.0f}",
+                body_style,
+            ),
+        ]],
+        colWidths=[3.5 * inch, 2.5 * inch, 4.0 * inch],
+    )
+    summary.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), regular_font),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EEF4F8")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#D6DEE6")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D6DEE6")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+
+    def add_page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(regular_font, 8)
+        canvas.setFillColor(colors.HexColor("#5D6B78"))
+        canvas.drawRightString(
+            page_size[0] - 0.35 * inch, 0.22 * inch, f"Page {doc.page}"
+        )
+        canvas.restoreState()
+
+    story = [
+        Paragraph("Subscription Waste Analysis Report", title_style),
+        Paragraph(f"Generated: {generated_at}", date_style),
+        summary,
+        Spacer(1, 14),
+        report_table,
+    ]
+    document.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+    return buffer.getvalue()
+
+
+st.set_page_config(
+    page_title="AI Subscription Waste Detector",
+    page_icon="💳",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.markdown(
+    """
+    <style>
+    :root {
+        --ink: #10243a;
+        --muted: #63758a;
+        --blue: #2864e8;
+        --teal: #1eb6a5;
+        --line: #e4ebf3;
+        --surface: #ffffff;
+    }
+    html, body, [class*="css"] {
+        font-family: 'Aptos', 'Segoe UI', sans-serif;
+        color: var(--ink);
+        font-size: 15px;
+        text-rendering: optimizeLegibility;
+    }
+    h1, h2, h3 {
+        font-family: 'Aptos Display', 'Segoe UI', sans-serif;
+        letter-spacing: -0.04em;
+        color: var(--ink);
+        margin-top: .2rem;
+        margin-bottom: .35rem;
+    }
+    h2 {
+        font-size: 1.45rem;
+        font-weight: 750;
+    }
+    h3 {
+        font-size: 1.08rem;
+        font-weight: 700;
+    }
+    [data-testid="stMarkdownContainer"] p {
+        line-height: 1.55;
+        color: #465b70;
+    }
+    [data-testid="stMainBlockContainer"] {
+        max-width: 1500px;
+    }
+    .stApp {
+        background:
+            radial-gradient(ellipse at 12% 0%, rgba(42, 100, 232, .06), transparent 35%),
+            #f5f8fc;
+    }
+    .stApp:has(.st-key-auth-layout) {
+        position: relative;
+        isolation: isolate;
+        min-height: 100vh;
+        overflow-x: clip;
+        background-color: #D7E2EE;
+        background-image:
+            radial-gradient(circle at 8% 17%, rgba(83, 153, 245, .05) 0 5.2rem, transparent 5.3rem),
+            radial-gradient(circle at 88% 19%, rgba(44, 183, 181, .045) 0 8.5rem, transparent 8.6rem),
+            radial-gradient(circle at 93% 73%, rgba(80, 153, 229, .04) 0 4.7rem, transparent 4.8rem),
+            radial-gradient(ellipse at 49% 39%, rgba(247,250,253,.64), transparent 56%),
+            linear-gradient(122deg, #D7E2EE 0%, #E7EEF7 48%, #D9F0EF 100%);
+        background-attachment: fixed;
+    }
+    .stApp:has(.st-key-auth-layout)::before {
+        position: fixed;
+        z-index: -1;
+        top: 16%;
+        right: 3.5%;
+        width: 190px;
+        height: 155px;
+        background-image: radial-gradient(rgba(49, 126, 187, .13) 1px, transparent 1.4px);
+        background-size: 15px 15px;
+        content: "";
+        opacity: .23;
+        pointer-events: none;
+    }
+    .stApp:has(.st-key-auth-layout) [data-testid="stMainBlockContainer"] {
+        position: relative;
+        z-index: 1;
+    }
+    [data-testid="stAppViewContainer"],
+    [data-testid="stHeader"] {
+        background: transparent;
+    }
+    [data-testid="stMainBlockContainer"] {
+        padding-top: .5rem;
+        padding-bottom: 1.35rem;
+    }
+    [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"],
+    [data-testid="stTabPanel"] > [data-testid="stVerticalBlock"] {
+        gap: .6rem;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #10243a 0%, #142f4a 100%);
+        border-right: 1px solid rgba(255,255,255,.08);
+    }
+    [data-testid="stSidebar"] * { color: #eaf2fc; }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label {
+        border-radius: 10px;
+        padding: .45rem .6rem;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+        background: rgba(255,255,255,.08);
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+        background: linear-gradient(100deg, rgba(40,100,232,.27), rgba(30,182,165,.12));
+        border: 1px solid rgba(169,214,237,.17);
+    }
+    [data-testid="stMetric"] {
+        position: relative;
+        background: linear-gradient(145deg, #fff 0%, #fbfdff 100%);
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        padding: .85rem 1rem;
+        box-shadow: 0 6px 20px rgba(16,36,58,.055);
+        transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    [data-testid="stMetric"]:hover {
+        border-color: #c8d8ea;
+        box-shadow: 0 9px 24px rgba(16,36,58,.085);
+        transform: translateY(-1px);
+    }
+    [data-testid="stMetricLabel"] {
+        color: var(--muted);
+        font-size: .82rem;
+        font-weight: 600;
+    }
+    [data-testid="stMetricValue"] {
+        color: var(--ink);
+        font-family: 'Aptos Display', 'Segoe UI', sans-serif;
+        font-weight: 800;
+        letter-spacing: -.035em;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab-list"] {
+        gap: .3rem;
+        padding: .3rem;
+        border: 1px solid #e3eaf3;
+        border-radius: 13px;
+        background: #edf2f8;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"] {
+        min-height: 2.55rem;
+        padding: .45rem .9rem;
+        border-radius: 10px;
+        color: #5c6f83;
+        font-size: .9rem;
+        font-weight: 650;
+        transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] {
+        color: #163b68;
+        background: #fff;
+        box-shadow: 0 2px 7px rgba(16,36,58,.09);
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"]:focus-visible {
+        outline: 3px solid rgba(40,100,232,.4);
+        outline-offset: 2px;
+    }
+    [data-testid="stFileUploader"] section {
+        min-height: 6.2rem;
+        padding: .5rem .7rem;
+        border-radius: 14px;
+        border: 1px dashed #8faac5;
+        background: linear-gradient(145deg, #f8fbff, #f1f7fb);
+        transition: border-color .18s ease, background .18s ease;
+    }
+    [data-testid="stFileUploader"] section:hover {
+        border-color: #3d82c8;
+        background: #f2f8ff;
+    }
+    [data-testid="stFileUploader"] button,
+    [data-testid="stFileUploader"] small {
+        font-size: .85rem;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        padding: .45rem .65rem;
+        border-color: #e2eaf3;
+        border-radius: 16px;
+        background: rgba(255,255,255,.78);
+        box-shadow: 0 5px 18px rgba(16,36,58,.035);
+    }
+    .hero {
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+        padding: 1.65rem 1.9rem;
+        border: 1px solid rgba(255,255,255,.18);
+        border-radius: 22px;
+        color: white;
+        background: linear-gradient(115deg, #122c48 0%, #1b4c77 58%, #137d83 100%);
+        box-shadow: 0 14px 32px rgba(18, 44, 72, .15), inset 0 1px 0 rgba(255,255,255,.13);
+        margin: .2rem 0 .65rem;
+    }
+    .hero:after {
+        content: '';
+        position: absolute;
+        width: 290px;
+        height: 290px;
+        right: -65px;
+        top: -155px;
+        border: 1px solid rgba(255,255,255,.19);
+        border-radius: 50%;
+        box-shadow: 0 0 0 30px rgba(255,255,255,.035), 0 0 0 62px rgba(255,255,255,.025);
+        pointer-events: none;
+        z-index: -1;
+    }
+    .hero:before {
+        content: '';
+        position: absolute;
+        width: 140px;
+        height: 140px;
+        right: 14%;
+        bottom: -118px;
+        border: 1px solid rgba(158,231,223,.22);
+        border-radius: 50%;
+        box-shadow: 0 0 0 22px rgba(255,255,255,.025);
+        pointer-events: none;
+        z-index: -1;
+    }
+    .hero-kicker {
+        color: #9ee7df;
+        font-size: .7rem;
+        font-weight: 700;
+        letter-spacing: .15em;
+        text-transform: uppercase;
+        margin-bottom: .35rem;
+    }
+    .hero h1 {
+        color: #fff;
+        font-size: clamp(1.8rem, 2.8vw, 2.5rem);
+        font-weight: 800;
+        margin: 0 0 .4rem;
+        line-height: 1.15;
+        letter-spacing: -.045em;
+    }
+    .hero p {
+        max-width: 720px;
+        color: #d6e5f2;
+        font-size: .98rem;
+        margin: 0;
+        line-height: 1.5;
+    }
+    .auth-hero {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.7rem;
+        padding: clamp(1.2rem, 2.5vw, 1.8rem) clamp(1.25rem, 3vw, 2.3rem);
+        margin: .3rem 0 1.25rem;
+        border-color: rgba(255,255,255,.24);
+        box-shadow: 0 12px 28px rgba(18,44,72,.13), inset 0 1px 0 rgba(255,255,255,.12);
+        text-align: left;
+    }
+    .auth-hero:after {
+        border-color: rgba(255,255,255,.15);
+        box-shadow: 0 0 0 30px rgba(255,255,255,.025), 0 0 0 62px rgba(255,255,255,.018);
+    }
+    .auth-hero:before {
+        border-color: rgba(158,231,223,.17);
+        box-shadow: 0 0 0 22px rgba(255,255,255,.018);
+    }
+    .auth-brand {
+        display: flex;
+        align-items: center;
+        gap: 1.1rem;
+        min-width: 0;
+    }
+    .auth-brand-icon {
+        display: grid;
+        flex: 0 0 3.3rem;
+        width: 3.3rem;
+        height: 3.3rem;
+        place-items: center;
+        border: 1px solid rgba(255,255,255,.28);
+        border-radius: 15px;
+        background: rgba(255,255,255,.12);
+        font-size: 1.6rem;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.16);
+    }
+    .auth-brand-icon svg {
+        display: block;
+        width: 1.7rem;
+        height: 1.7rem;
+        fill: none;
+        stroke: #b7f0e9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.8;
+    }
+    .auth-hero h1 {
+        font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+        margin: 0 0 .35rem;
+    }
+    .auth-hero p {
+        max-width: 620px;
+        margin: 0;
+        font-size: .94rem;
+    }
+    .auth-badges {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: .55rem;
+        max-width: 430px;
+    }
+    .auth-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .5rem .7rem;
+        border: 1px solid rgba(255,255,255,.22);
+        border-radius: 999px;
+        color: #f2fbff;
+        background: rgba(255,255,255,.1);
+        font-size: .76rem;
+        font-weight: 650;
+        white-space: nowrap;
+    }
+    .st-key-auth-layout [data-testid="stHorizontalBlock"] {
+        align-items: center;
+        gap: clamp(1rem, 2vw, 1.8rem);
+    }
+    .auth-features {
+        display: flex;
+        flex-direction: column;
+        gap: 1.1rem;
+        padding: .3rem 0;
+    }
+    .auth-feature {
+        display: flex;
+        align-items: flex-start;
+        gap: .85rem;
+        padding: .25rem 0;
+    }
+    .auth-feature-icon {
+        display: grid;
+        flex: 0 0 2.65rem;
+        width: 2.65rem;
+        height: 2.65rem;
+        place-items: center;
+        border: 1px solid #d3e2ec;
+        border-radius: 50%;
+        color: #116f7d;
+        background: linear-gradient(145deg, #fff, #eaf6f8);
+        box-shadow: 0 3px 10px rgba(22,72,97,.07);
+        font-size: 1.12rem;
+    }
+    .auth-feature-copy strong {
+        display: block;
+        margin: .12rem 0 .2rem;
+        color: #173653;
+        font-size: .94rem;
+        font-weight: 750;
+    }
+    .auth-feature-copy p {
+        margin: 0;
+        color: #5B718A;
+        font-size: .82rem;
+        line-height: 1.48;
+    }
+    .auth-card-heading {
+        padding: .3rem 0 .4rem;
+        text-align: center;
+    }
+    .auth-card-heading h2 {
+        margin: .25rem 0 .2rem;
+        color: #173653;
+        font-size: 1.55rem;
+        letter-spacing: -.035em;
+    }
+    .auth-card-heading p {
+        margin: 0;
+        color: #5B718A;
+        font-size: .88rem;
+    }
+    .auth-security {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .5rem;
+        margin: .65rem .15rem .05rem;
+        padding: .65rem .6rem .05rem;
+        border-top: 1px solid #C3D2E2;
+        color: #5B718A;
+        font-size: .78rem;
+        text-align: center;
+    }
+    .auth-security-icon {
+        display: inline-flex;
+        flex: 0 0 1rem;
+        width: 1rem;
+        height: 1rem;
+        color: #147d78;
+    }
+    .auth-security-icon svg {
+        width: 100%;
+        height: 100%;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.8;
+    }
+    .auth-page-waves {
+        position: fixed;
+        z-index: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        width: 100vw;
+        height: clamp(54px, 8vh, 82px);
+        overflow: hidden;
+        margin: 0;
+        pointer-events: none;
+    }
+    .auth-page-waves svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+    .auth-illustration {
+        position: relative;
+        display: grid;
+        min-height: 330px;
+        place-items: center;
+        overflow: hidden;
+        border: 1px solid #C3D2E2;
+        border-radius: 24px;
+        background:
+            radial-gradient(circle at 50% 42%, rgba(35,145,164,.09), transparent 58%),
+            linear-gradient(145deg, #FFFFFF, #EAF2F9);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 10px 24px rgba(18,55,78,.065);
+    }
+    .auth-illustration:before,
+    .auth-illustration:after {
+        position: absolute;
+        content: "";
+        border: 1px solid rgba(31,130,148,.12);
+        border-radius: 50%;
+        pointer-events: none;
+    }
+    .auth-illustration:before {
+        width: 260px;
+        height: 260px;
+        top: -110px;
+        right: -100px;
+        box-shadow: 0 0 0 24px rgba(31,130,148,.035);
+    }
+    .auth-illustration:after {
+        width: 180px;
+        height: 180px;
+        bottom: -100px;
+        left: -65px;
+    }
+    .auth-illustration svg {
+        position: relative;
+        z-index: 1;
+        display: block;
+        width: min(100%, 370px);
+        height: auto;
+        padding: .7rem;
+    }
+    .auth-float {
+        position: absolute;
+        z-index: 2;
+        display: grid;
+        width: 2.45rem;
+        height: 2.45rem;
+        place-items: center;
+        border: 1px solid rgba(215,232,241,.95);
+        border-radius: 13px;
+        color: #176f81;
+        background: rgba(255,255,255,.94);
+        box-shadow: 0 7px 18px rgba(18,55,78,.12);
+        font-size: 1rem;
+    }
+    .auth-float-one { top: 16%; left: 8%; }
+    .auth-float-two { top: 29%; right: 7%; color: #3871c9; }
+    .auth-float-three { right: 12%; bottom: 14%; color: #16887d; }
+    .auth-float-four { bottom: 18%; left: 8%; color: #b47932; }
+    .st-key-auth-card [data-testid="stTabs"] {
+        margin-bottom: .5rem;
+    }
+    .st-key-auth-card [data-testid="stForm"] {
+        padding-top: .3rem;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+        min-height: 3.2rem;
+        border-radius: 12px !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputField"] {
+        padding: .78rem .85rem !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stFormSubmitButton"] {
+        margin-top: .35rem;
+    }
+    .st-key-auth-card [data-testid="stVerticalBlockBorderWrapper"] {
+        padding: .75rem .85rem;
+        border-color: #C3D2E2;
+        border-radius: 20px;
+        background: rgba(248,250,253,.94);
+        box-shadow: 0 13px 32px rgba(33,58,87,.115), 0 2px 7px rgba(33,58,87,.035);
+    }
+    .st-key-auth-card [data-testid="stForm"] label {
+        color: #173653 !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+        border-color: #C3D2E2 !important;
+        background-color: #FFFFFF !important;
+    }
+    .st-key-auth-card [data-testid="stForm"] [data-testid="stTextInputRootElement"]:focus-within {
+        border-color: #2864e8 !important;
+        box-shadow: 0 0 0 2px rgba(40,100,232,.12) !important;
+    }
+    .section-eyebrow {
+        color: #287c92;
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        margin-bottom: .25rem;
+    }
+    .soft-card {
+        background: linear-gradient(145deg, #fff 0%, #fbfdff 100%);
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        padding: .9rem 1.05rem;
+        box-shadow: 0 6px 20px rgba(16,36,58,.045);
+        height: 100%;
+    }
+    .soft-card strong { color: var(--ink); font-weight: 700; }
+    .soft-card p { color: var(--muted); margin: .35rem 0 0; font-size: .9rem; }
+    .service-icon-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 215px), 1fr));
+        gap: .5rem;
+        margin: .25rem 0 .55rem;
+    }
+    .service-icon-card {
+        display: flex;
+        align-items: center;
+        gap: .7rem;
+        min-width: 0;
+        padding: .55rem .7rem;
+        border: 1px solid #e5ecf4;
+        border-radius: 12px;
+        background: linear-gradient(145deg, #fff, #fbfdff);
+        box-shadow: 0 3px 11px rgba(16,36,58,.035);
+    }
+    .service-icon {
+        display: grid;
+        flex: 0 0 2.25rem;
+        width: 2.25rem;
+        height: 2.25rem;
+        place-items: center;
+        border: 1px solid #e7edf4;
+        border-radius: 10px;
+        background: #f7f9fc;
+    }
+    .service-icon img,
+    .service-icon svg {
+        display: block;
+        width: 1.75rem;
+        height: 1.75rem;
+        object-fit: contain;
+    }
+    .service-icon-copy {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        gap: .08rem;
+    }
+    .service-icon-copy strong {
+        overflow: hidden;
+        color: var(--ink);
+        font-size: .88rem;
+        font-weight: 700;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .service-icon-copy small {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: .74rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .stButton > button[kind="primary"] {
+        border: 0;
+        border-radius: 12px;
+        min-height: 2.9rem;
+        padding: 0 1.45rem;
+        color: #fff !important;
+        font-weight: 700;
+        letter-spacing: .01em;
+        background: linear-gradient(100deg, #2864e8, #147d91);
+        box-shadow: 0 8px 18px rgba(40,100,232,.22), inset 0 1px 0 rgba(255,255,255,.18);
+        transition: box-shadow .18s ease, transform .18s ease;
+    }
+    .stButton > button[kind="primary"] *,
+    .stButton > button[kind="primary"] svg {
+        color: #fff !important;
+        fill: #fff !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        color: #fff !important;
+        box-shadow: 0 11px 22px rgba(40,100,232,.28), inset 0 1px 0 rgba(255,255,255,.2);
+        transform: translateY(-1px);
+    }
+    .stButton > button[kind="primary"]:focus-visible {
+        outline: 3px solid rgba(40,100,232,.35);
+        outline-offset: 2px;
+    }
+    .stButton > button[kind="primary"]:disabled {
+        color: rgba(255,255,255,.86) !important;
+        background: linear-gradient(100deg, #7187b8, #628d99);
+        box-shadow: none;
+    }
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button {
+        width: 100%;
+        min-height: 2.9rem;
+        padding: 0 1.45rem;
+        border-radius: 12px;
+        color: #fff !important;
+        font-weight: 700;
+        background: linear-gradient(100deg, #2864e8, #147d91);
+        transition: background .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button:hover,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button:hover {
+        color: #fff !important;
+        background: linear-gradient(100deg, #2054c7, #106875);
+        box-shadow: 0 8px 18px rgba(40,100,232,.24);
+        transform: translateY(-1px);
+    }
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button:focus-visible,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button:focus-visible {
+        outline: 3px solid rgba(40,100,232,.35);
+        outline-offset: 2px;
+    }
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button *,
+    .st-key-login-submit [data-testid="stFormSubmitButton"] button svg,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button *,
+    .st-key-registration-submit [data-testid="stFormSubmitButton"] button svg {
+        color: #fff !important;
+        fill: #fff !important;
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        max-width: 24rem;
+        min-height: 3rem;
+        padding: .65rem 1.3rem;
+        border: 0;
+        border-radius: 12px;
+        color: #fff !important;
+        font-weight: 700;
+        background: linear-gradient(100deg, #2864e8, #147d91);
+        box-shadow: 0 8px 18px rgba(40,100,232,.22), inset 0 1px 0 rgba(255,255,255,.18);
+        transition: box-shadow .18s ease, transform .18s ease;
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button:hover {
+        color: #fff !important;
+        box-shadow: 0 11px 22px rgba(40,100,232,.28), inset 0 1px 0 rgba(255,255,255,.2);
+        transform: translateY(-1px);
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button:focus-visible {
+        outline: 3px solid rgba(40,100,232,.35);
+        outline-offset: 2px;
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button::after {
+        content: "↓";
+        margin-left: .5rem;
+        font-size: 1.1rem;
+        line-height: 1;
+    }
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button *,
+    .st-key-pdf-report-download [data-testid="stDownloadButton"] button svg {
+        color: #fff !important;
+        fill: #fff !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+        min-height: 3rem;
+        background-color: #fff !important;
+        border: 1px solid #cbd8e6 !important;
+        border-radius: 10px !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"]:focus-within {
+        border-color: #2864e8 !important;
+        box-shadow: 0 0 0 2px rgba(40,100,232,.14) !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputField"] {
+        padding: .65rem .75rem !important;
+        background-color: transparent !important;
+        color: #10243a !important;
+        -webkit-text-fill-color: #10243a !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputField"]::placeholder {
+        color: #63758a !important;
+        opacity: 1;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"] button[aria-label*="password" i] {
+        color: #10243a !important;
+        background-color: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stForm"] [data-testid="stTextInputRootElement"] button[aria-label*="password" i] svg {
+        color: #10243a !important;
+        fill: currentColor;
+    }
+    [data-testid="stForm"] label {
+        color: #17324d !important;
+        font-size: .9rem;
+        font-weight: 650;
+    }
+    .stButton > button { border-radius: 10px; }
+    [data-testid="stDataEditor"],
+    [data-testid="stDataFrame"] {
+        border: 1px solid #e1e9f2;
+        border-radius: 13px;
+        box-shadow: 0 4px 15px rgba(16,36,58,.035);
+        overflow: hidden;
+    }
+    [data-testid="stDataEditor"] [role="grid"],
+    [data-testid="stDataFrame"] [role="grid"] {
+        font-size: .88rem;
+    }
+    div[data-testid="stDataFrame"], div[data-testid="stDataEditor"] {
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    [data-testid="stPlotlyChart"] {
+        border: 1px solid #e7edf4;
+        border-radius: 14px;
+        padding: .35rem .45rem .15rem;
+        background: rgba(255,255,255,.78);
+        box-shadow: 0 4px 15px rgba(16,36,58,.035);
+    }
+    @media (max-width: 700px) {
+        [data-testid="stMainBlockContainer"] {
+            padding-top: .5rem;
+            padding-bottom: 1rem;
+        }
+        .hero { padding: 1.2rem 1.15rem; border-radius: 17px; }
+        .hero:after { width: 210px; height: 210px; right: -105px; top: -120px; }
+        .auth-hero {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1.15rem;
+        }
+        .stApp:has(.st-key-auth-layout)::before {
+            top: 28%;
+            right: -42px;
+            width: 125px;
+            height: 110px;
+            opacity: .3;
+        }
+        .auth-brand { align-items: flex-start; gap: .75rem; }
+        .auth-brand-icon {
+            flex-basis: 2.8rem;
+            width: 2.8rem;
+            height: 2.8rem;
+            border-radius: 12px;
+            font-size: 1.35rem;
+        }
+        .auth-hero h1 { font-size: 1.45rem; }
+        .auth-hero p { font-size: .85rem; }
+        .auth-badges { justify-content: flex-start; gap: .35rem; }
+        .auth-badge { padding: .42rem .58rem; font-size: .69rem; }
+        .st-key-auth-layout [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .st-key-auth-layout [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            flex: 1 1 100% !important;
+            min-width: min(100%, 20rem) !important;
+        }
+        .auth-features {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: .75rem;
+        }
+        .auth-feature { gap: .55rem; }
+        .auth-feature-icon {
+            flex-basis: 2.25rem;
+            width: 2.25rem;
+            height: 2.25rem;
+            font-size: .95rem;
+        }
+        .auth-feature-copy strong { font-size: .84rem; }
+        .auth-feature-copy p { font-size: .75rem; }
+        .auth-illustration { min-height: 280px; }
+        .auth-page-waves { height: 48px; }
+        [data-testid="stTabs"] [data-baseweb="tab-list"] {
+            gap: .1rem;
+            overflow-x: auto;
+            flex-wrap: nowrap;
+        }
+        [data-testid="stTabs"] [data-baseweb="tab"] {
+            flex-shrink: 0;
+            padding: .4rem .62rem;
+            font-size: .82rem;
+        }
+        [data-testid="stMetric"] { padding: .7rem; }
+        [data-testid="stPlotlyChart"] { padding: .15rem; }
+        .service-icon-list {
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
+        }
+        [data-testid="stFileUploader"] section {
+            min-height: 5.8rem;
+            padding: .35rem .45rem;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            padding: .35rem .4rem;
+        }
+    }
+    @media (min-width: 701px) and (max-width: 1100px) {
+        .auth-hero { align-items: flex-start; flex-direction: column; }
+        .auth-badges { justify-content: flex-start; max-width: none; }
+        .st-key-auth-layout [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap;
+            gap: 1.2rem;
+        }
+        .st-key-auth-layout [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            flex: 1 1 45% !important;
+            min-width: min(100%, 20rem) !important;
+        }
+        .auth-features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+@st.cache_resource
+def load_model():
+    return joblib.load(MODEL_PATH)
+
+
+@st.cache_resource
+def load_icon_catalog():
+    if SIMPLE_ICONS is None:
+        return {}
+
+    catalog = {}
+    ambiguous_names = set()
+    for icon in SIMPLE_ICONS.values():
+        for label in (icon.slug, icon.title):
+            normalized = re.sub(r"[^a-z0-9]", "", label.casefold())
+            if not normalized:
+                continue
+            existing = catalog.get(normalized)
+            if existing is not None and existing.slug != icon.slug:
+                ambiguous_names.add(normalized)
+            else:
+                catalog[normalized] = icon
+
+    for normalized in ambiguous_names:
+        catalog.pop(normalized, None)
+    return catalog
+
+
+def normalized_service_names(name):
+    raw_name = str(name).strip()
+    normalized = re.sub(r"[^a-z0-9]", "", raw_name.casefold())
+    slugified = re.sub(r"[^a-z0-9]+", "-", raw_name.casefold()).strip("-")
+    candidates = []
+
+    domain_text = raw_name.casefold()
+    if "://" not in domain_text and re.match(
+        r"^(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}(?::\d+)?(?:/.*)?$", domain_text
+    ):
+        domain_text = "https://" + domain_text
+    host = urlsplit(domain_text).hostname or ""
+    host_parts = host.removeprefix("www.").split(".")
+    common_tlds = {
+        "app", "au", "ca", "com", "dev", "edu", "in", "io", "net",
+        "org", "tv", "uk",
+    }
+    if len(host_parts) >= 2 and (
+        host_parts[-1] in common_tlds
+        or (len(host_parts) >= 3 and host_parts[-1] == "uk" and host_parts[-2] == "co")
+    ):
+        registrable_label = host_parts[-3] if host_parts[-1] == "uk" and host_parts[-2] == "co" else host_parts[-2]
+        candidates.append(re.sub(r"[^a-z0-9]", "", registrable_label))
+
+    candidates.append(normalized)
+    candidates.append(slugified)
+    for suffix in ("premium", "subscription", "membership", "plan"):
+        service_base = re.sub(
+            rf"[\s_-]+{suffix}$", "", raw_name, flags=re.IGNORECASE
+        )
+        if service_base != raw_name:
+            candidates.append(re.sub(r"[^a-z0-9]", "", service_base.casefold()))
+            candidates.append(
+                re.sub(r"[^a-z0-9]+", "-", service_base.casefold()).strip("-")
+            )
+    return tuple(dict.fromkeys(candidate for candidate in candidates if candidate))
+
+
+def valid_icon_svg(svg_bytes):
+    if not svg_bytes or len(svg_bytes) > 200_000:
+        return False
+    try:
+        root = ET.fromstring(svg_bytes)
+    except ET.ParseError:
+        return False
+    if root.tag.rsplit("}", 1)[-1].lower() != "svg":
+        return False
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1].lower() in {
+            "script",
+            "foreignobject",
+            "iframe",
+            "object",
+            "embed",
+        }:
+            return False
+        for attribute in element.attrib:
+            attribute_name = attribute.rsplit("}", 1)[-1].lower()
+            if attribute_name.startswith("on"):
+                return False
+            if attribute_name == "src":
+                return False
+            if attribute_name == "href" and not element.attrib[attribute].startswith("#"):
+                return False
+            if attribute_name == "style" and re.search(
+                r"url\s*\(", element.attrib[attribute], flags=re.IGNORECASE
+            ):
+                return False
+    return True
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def lookup_iconify_icon(service_name, direct_only=False, search_only=False):
+    headers = {"User-Agent": "AI-Subscription-Waste-Detector/1.0"}
+    if not search_only:
+        slug_variants = tuple(
+            dict.fromkeys(
+                candidate
+                for candidate in (
+                    re.sub(r"[^a-z0-9]+", "-", service_name.casefold()).strip("-"),
+                    re.sub(r"[^a-z0-9]", "", service_name.casefold()),
+                )
+                if candidate
+            )
+        )
+        for slug in slug_variants:
+            svg_url = f"https://api.iconify.design/logos/{slug}.svg"
+            try:
+                request = Request(svg_url, headers=headers)
+                with urlopen(request, timeout=3) as response:
+                    svg_bytes = response.read(200_001)
+            except (HTTPException, URLError, TimeoutError, OSError):
+                continue
+            if valid_icon_svg(svg_bytes):
+                return "logos", slug, svg_bytes
+
+    if direct_only:
+        return None
+
+    search_url = "https://api.iconify.design/search?" + urlencode(
+        {"query": service_name, "limit": 64}
+    )
+    try:
+        request = Request(search_url, headers=headers)
+        with urlopen(request, timeout=3) as response:
+            search_data = json.loads(response.read(200_000))
+    except (
+        HTTPException,
+        URLError,
+        TimeoutError,
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
+        return None
+
+    if not isinstance(search_data, dict) or not isinstance(
+        search_data.get("icons"), list
+    ):
+        return None
+
+    target = re.sub(r"[^a-z0-9]", "", service_name.casefold())
+    preferred_collections = (
+        "logos",
+        "thesvg-color",
+        "streamline-color",
+        "simple-icons",
+        "cib",
+        "bxl",
+        "fa-brands",
+    )
+    collection_metadata = search_data.get("collections", {})
+    logo_collections = {
+        collection
+        for collection, metadata in collection_metadata.items()
+        if isinstance(metadata, dict)
+        and str(metadata.get("category", "")).casefold() == "logos"
+        and (
+            metadata.get("palette") is True
+            or collection in {"logos", "simple-icons", "cib", "bxl", "fa-brands"}
+        )
+    }
+    matches = []
+    for result in search_data.get("icons", []):
+        collection, separator, slug = result.partition(":")
+        if (
+            separator
+            and (
+                collection in preferred_collections
+                or collection in logo_collections
+            )
+            and re.sub(r"[^a-z0-9]", "", slug.casefold()) == target
+        ):
+            priority = (
+                preferred_collections.index(collection)
+                if collection in preferred_collections
+                else len(preferred_collections)
+            )
+            matches.append((priority, collection, slug))
+
+    for _, collection, slug in sorted(matches):
+        svg_url = f"https://api.iconify.design/{collection}/{slug}.svg"
+        try:
+            request = Request(svg_url, headers=headers)
+            with urlopen(request, timeout=3) as response:
+                svg_bytes = response.read(200_001)
+        except (HTTPException, URLError, TimeoutError, OSError):
+            continue
+        if valid_icon_svg(svg_bytes):
+            return collection, slug, svg_bytes
+    return None
+
+
+@st.cache_data(show_spinner=False)
+def resolve_brand_icon(name):
+    candidates = normalized_service_names(name)
+    if not candidates:
+        return None
+
+    for normalized in candidates:
+        remote_icon = lookup_iconify_icon(normalized, direct_only=True)
+        if remote_icon is not None:
+            _, slug, svg_bytes = remote_icon
+            return slug.replace("-", " ").title(), "#51677f", svg_bytes
+
+    for normalized in candidates:
+        remote_icon = lookup_iconify_icon(normalized, search_only=True)
+        if remote_icon is not None:
+            _, slug, svg_bytes = remote_icon
+            return slug.replace("-", " ").title(), "#51677f", svg_bytes
+
+    local_catalog = load_icon_catalog()
+    for normalized in candidates:
+        icon = local_catalog.get(re.sub(r"[^a-z0-9]", "", normalized.casefold()))
+        if icon is not None:
+            svg_bytes = icon.get_xml_bytes(fill=f"#{icon.hex}")
+            if valid_icon_svg(svg_bytes):
+                return icon.title, icon.hex, svg_bytes
+    return None
+
+
+def icon_data_uri(svg_bytes):
+    encoded_svg = base64.b64encode(svg_bytes).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded_svg}"
+
+
+def render_subscription_icon_list(data, include_risk=False):
+    items = []
+    for _, row in data.iterrows():
+        name = str(row["subscription_name"])
+        escaped_name = html.escape(name)
+        brand_icon = resolve_brand_icon(name)
+        if brand_icon is None:
+            image = (
+                '<svg viewBox="0 0 24 24" role="img" aria-label="Subscription">'
+                '<rect x="3.5" y="4.5" width="17" height="15" rx="3" '
+                'fill="none" stroke="#7890a6" stroke-width="1.7"/>'
+                '<path d="M7.5 9h9M7.5 13h5" stroke="#7890a6" '
+                'stroke-width="1.7" stroke-linecap="round"/>'
+                "</svg>"
+            )
+            icon_markup = image
+        else:
+            title, _, svg_bytes = brand_icon
+            icon_markup = (
+                f'<img src="{icon_data_uri(svg_bytes)}" '
+                f'alt="{html.escape(title)}" loading="lazy">'
+            )
+
+        details = [
+            html.escape(str(row["category"])),
+            f"₹{float(row['monthly_cost']):,.0f}/mo",
+        ]
+        if include_risk and "waste_risk" in row:
+            details.append(f"{float(row['waste_risk']):.1f}% estimated risk")
+        items.append(
+            '<div class="service-icon-card">'
+            f'<span class="service-icon">{icon_markup}</span>'
+            '<span class="service-icon-copy">'
+            f'<strong title="{escaped_name}">{escaped_name}</strong>'
+            f'<small>{" · ".join(details)}</small>'
+            "</span></div>"
+        )
+
+    st.markdown(
+        '<div class="service-icon-list">' + "".join(items) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def add_service_icons_to_chart(chart, data):
+    maximum_cost = max(float(data["monthly_cost"].max()), 1.0)
+    images = []
+    for _, row in data.iterrows():
+        brand_icon = resolve_brand_icon(row["subscription_name"])
+        if brand_icon is None:
+            continue
+        _, _, svg_bytes = brand_icon
+        cost = float(row["monthly_cost"])
+        images.append(
+            {
+                "source": icon_data_uri(svg_bytes),
+                "xref": "x",
+                "yref": "y",
+                "x": str(row["subscription_name"]),
+                "y": max(cost, maximum_cost * 0.04) + maximum_cost * 0.055,
+                "sizex": 0.34,
+                "sizey": maximum_cost * 0.09,
+                "xanchor": "center",
+                "yanchor": "bottom",
+                "sizing": "contain",
+                "layer": "above",
+            }
+        )
+    if images:
+        chart.update_layout(images=images)
+        chart.update_yaxes(range=[0, maximum_cost * 1.25])
+    return chart
+
+
+@st.cache_data(show_spinner=False)
+def forecast_usage(history_values):
+    import tensorflow as tf
+    from sklearn.preprocessing import MinMaxScaler
+    from tensorflow.keras.layers import Dense, Input, LSTM
+    from tensorflow.keras.models import Sequential
+
+    history = np.asarray(history_values, dtype=float)
+    window = 3
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(history.reshape(-1, 1))
+    features, targets = [], []
+
+    for index in range(len(scaled) - window):
+        features.append(scaled[index:index + window, 0])
+        targets.append(scaled[index + window, 0])
+
+    features = np.asarray(features).reshape(-1, window, 1)
+    targets = np.asarray(targets)
+    tf.keras.utils.set_random_seed(42)
+
+    forecast_model = Sequential(
+        [Input(shape=(window, 1)), LSTM(16), Dense(1)]
+    )
+    forecast_model.compile(optimizer="adam", loss="mse")
+    forecast_model.fit(features, targets, epochs=100, verbose=0)
+    last_window = scaled[-window:].reshape(1, window, 1)
+    forecast_scaled = forecast_model.predict(last_window, verbose=0)
+    predicted_days = float(scaler.inverse_transform(forecast_scaled)[0, 0])
+    return float(np.clip(predicted_days, 0, 30))
+
+
+def fingerprint(data):
+    return sha256(data.to_csv(index=False).encode("utf-8")).hexdigest()
+
+
+def validate_input(input_data):
+    errors = []
+    if input_data.empty:
+        return None, ["Add at least one subscription before analysis."]
+
+    missing_columns = [
+        column for column in REQUIRED_COLUMNS if column not in input_data.columns
+    ]
+    if missing_columns:
+        return None, ["Missing required columns: " + ", ".join(missing_columns)]
+
+    data = input_data.copy()
+    for column in ("subscription_name", "category"):
+        data[column] = data[column].astype("string").str.strip()
+        invalid_rows = data[column].isna() | data[column].eq("")
+        if invalid_rows.any():
+            rows = (np.flatnonzero(invalid_rows.to_numpy()) + 1).tolist()
+            errors.append(
+                f"{column} must be filled in (table row(s): "
+                + ", ".join(map(str, rows))
+                + ")."
+            )
+
+    for column in NUMERIC_COLUMNS:
+        original = data[column]
+        converted = pd.to_numeric(original, errors="coerce")
+        invalid = converted.isna() | ~np.isfinite(converted.fillna(0))
+        if invalid.any():
+            rows = (np.flatnonzero(invalid.to_numpy()) + 1).tolist()
+            errors.append(
+                f"{column} must contain valid finite numbers "
+                "(table row(s): "
+                + ", ".join(map(str, rows))
+                + ")."
+            )
+        data[column] = converted
+
+    if errors:
+        return None, errors
+
+    range_checks = [
+        (data["monthly_cost"] < 0, "Monthly cost cannot be negative."),
+        (
+            (data["usage_days"] < 0) | (data["usage_days"] > 31),
+            "Usage days must be between 0 and 31.",
+        ),
+        (data["usage_hours"] < 0, "Usage hours cannot be negative."),
+        (
+            data["months_subscribed"] < 1,
+            "Months subscribed must be at least 1.",
+        ),
+        (
+            (data["previous_usage_days"] < 0)
+            | (data["previous_usage_days"] > 31),
+            "Previous usage days must be between 0 and 31.",
+        ),
+    ]
+    for invalid, message in range_checks:
+        if invalid.any():
+            errors.append(message)
+
+    return (None, errors) if errors else (data, [])
+
+
+def prepare_model_input(data):
+    return pd.DataFrame(
+        {
+            "monthly_cost": data["monthly_cost"],
+            "usage_days": data["usage_days"],
+            "usage_hours": data["usage_hours"],
+            "months_subscribed": data["months_subscribed"],
+            "previous_usage_days": data["previous_usage_days"],
+            "category": data["category"].astype(str),
+            "usage_percentage": data["usage_days"] / 30 * 100,
+            "usage_change": data["usage_days"]
+            - data["previous_usage_days"],
+        }
+    )
+
+
+def style_chart(chart):
+    chart.update_layout(
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font_family="Aptos, Segoe UI, sans-serif",
+        margin=dict(l=12, r=12, t=38, b=10),
+        legend_title_text="",
+        height=310,
+    )
+    return chart
+
+
+def build_findings(row):
+    current_days = float(row["usage_days"])
+    previous_days = float(row["previous_usage_days"])
+    monthly_cost = float(row["monthly_cost"])
+    findings, recommendations = [], []
+
+    if previous_days > 0 and current_days < previous_days:
+        decrease = (previous_days - current_days) / previous_days * 100
+        findings.append(
+            f"Usage decreased by {decrease:.1f}% compared with the previous month."
+        )
+        recommendations.append("Check whether your usage is likely to remain low.")
+    elif current_days > previous_days:
+        findings.append(
+            f"Usage increased by {current_days - previous_days:.0f} day(s)."
+        )
+    else:
+        findings.append("Usage has not decreased compared with last month.")
+
+    if current_days == 0:
+        findings.append("No usage was recorded this month.")
+        recommendations.append("Consider pausing or cancelling if you no longer need it.")
+    elif current_days <= 3:
+        findings.append(
+            f"The subscription was used on only {current_days:.0f} day(s) this month."
+        )
+        recommendations.append("Compare the cost with how much you actually use it.")
+    elif current_days >= 20:
+        findings.append("The subscription was used frequently this month.")
+
+    annual_cost = monthly_cost * 12
+    if monthly_cost >= 500:
+        findings.append(
+            f"The annual cost is ₹{annual_cost:,.0f}, "
+            "so reviewing its value may be worthwhile."
+        )
+    return findings, recommendations, annual_cost
+
+
+def render_about():
+    st.markdown(
+        """
+        <div class="hero">
+          <div class="hero-kicker">Project brief</div>
+          <h1>About the project</h1>
+          <p>An analytics dashboard for reviewing subscription usage, spending, and possible waste—without automating cancellation decisions.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="section-eyebrow">Purpose</div>', unsafe_allow_html=True)
+    st.header("Project overview & objectives")
+    st.write(
+        "AI Subscription Waste Detector combines subscription details and usage "
+        "patterns to help people spot services that may be worth reviewing."
+    )
+    objectives = st.columns(3)
+    for column, title, body in zip(
+        objectives,
+        ["Understand spend", "Review usage", "Support decisions"],
+        [
+            "Summarize recurring costs and estimate a steady-price spending baseline.",
+            "Highlight low or declining usage and possible category-level overlap.",
+            "Present model estimates and practical recommendations for human review.",
+        ],
+    ):
+        with column:
+            st.markdown(
+                f'<div class="soft-card"><strong>{title}</strong><p>{body}</p></div>',
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Technologies")
+        st.markdown(
+            "- **Python** for the application and analysis\n"
+            "- **Streamlit** for the interactive dashboard\n"
+            "- **Pandas and NumPy** for data processing\n"
+            "- **Scikit-learn** and a trained **Random Forest** pipeline\n"
+            "- **Plotly** for interactive charts\n"
+            "- **Simple Icons** local catalog for offline brand marks\n"
+            "- **TensorFlow/Keras** for an experimental usage forecast\n"
+            "- **CSV** files for subscription and usage-history data"
+        )
+        st.subheader("Key features")
+        st.markdown(
+            "- CSV import and editable subscription data\n"
+            "- Model predictions, risk scores, and review-cost estimates\n"
+            "- Spending baseline and cancellation savings simulator\n"
+            "- Usage trends, category overlap, and recommendations\n"
+            "- Downloadable analysis report"
+        )
+    with right:
+        st.subheader("How the machine-learning analysis works")
+        st.markdown(
+            "The app derives usage percentage and month-over-month usage change, "
+            "then sends those values together with the supplied cost, usage, "
+            "tenure, and category features to the saved Random Forest pipeline. "
+            "Its prediction and class-1 score are displayed as an assessment "
+            "and risk estimate."
+        )
+        st.subheader("Limitations")
+        st.warning(
+            "The training labels are synthetic, and model performance has not "
+            "been established on representative real-world subscription data. "
+            "Risk scores are estimates—not guaranteed probabilities or proof "
+            "of waste. The spending forecast assumes current prices remain "
+            "unchanged; the LSTM forecast is experimental and uses limited "
+            "history. Recommendations do not cancel services or guarantee savings."
+        )
+        st.caption(
+            "Brand marks are matched exactly against the local Simple Icons "
+            "catalog first. If no local match is found, the app may send that "
+            "subscription name (or its explicitly entered domain) to Iconify's "
+            "search API; only an exact logo-slug match is accepted. Iconify "
+            "lookups are cached for one hour. If the service is unavailable, "
+            "the name is unmatched, or the app is offline, a neutral icon is shown."
+        )
+    st.caption(
+        "The application is intended to support review and learning, not to "
+        "replace personal judgment."
+    )
+
+
+def clear_user_session():
+    user_state_keys = (
+        "auth_user_id",
+        "auth_username",
+        "draft_data",
+        "upload_signature",
+        "upload_error",
+        "analysis_data",
+        "analysis_fingerprint",
+        "subscription_data_fingerprint",
+        "subscription_editor",
+        "subscription_csv_upload",
+        "cancellation_simulator",
+        "forecast_subscription",
+        "restore_sample_data",
+    )
+    for key in user_state_keys:
+        st.session_state.pop(key, None)
+
+
+def start_user_session(user_id, username):
+    clear_user_session()
+    saved_data = load_subscriptions(user_id)
+    st.session_state.auth_user_id = user_id
+    st.session_state.auth_username = username
+    st.session_state.draft_data = (
+        saved_data if saved_data is not None else DEFAULT_DATA.copy()
+    )
+    st.session_state.upload_signature = None
+    st.session_state.upload_error = None
+    st.session_state.analysis_data = None
+    st.session_state.analysis_fingerprint = None
+    st.session_state.subscription_data_fingerprint = fingerprint(
+        st.session_state.draft_data
+    )
+
+
+try:
+    initialize_database()
+except (OSError, sqlite3.Error) as error:
+    st.error(f"Could not initialize the local account database: {error}")
+    st.stop()
+
+if not st.session_state.get("auth_user_id"):
+    st.markdown(
+        """
+        <div class="hero auth-hero">
+          <div class="auth-brand">
+            <div class="auth-brand-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 19V11M10 19V5M16 19v-7M22 19H2"/>
+              </svg>
+            </div>
+            <div>
+              <h1>AI Subscription Waste Detector</h1>
+              <p>Analyse your subscriptions. Detect wasted spending. Save more.</p>
+            </div>
+          </div>
+          <div class="auth-badges" aria-label="Product features">
+            <span class="auth-badge"><span aria-hidden="true">✦</span> AI Powered Analysis</span>
+            <span class="auth-badge"><span aria-hidden="true">◷</span> Track Spending</span>
+            <span class="auth-badge"><span aria-hidden="true">✓</span> Cancel Unnecessary</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.container(key="auth-layout"):
+        feature_column, auth_column, illustration_column = st.columns(
+            [1, 1.12, 1], gap="large", vertical_alignment="center"
+        )
+        with feature_column:
+            st.markdown(
+                """
+                <div class="auth-features">
+                  <div class="auth-feature">
+                    <span class="auth-feature-icon" aria-hidden="true">◎</span>
+                    <div class="auth-feature-copy">
+                      <strong>Detect Waste</strong>
+                      <p>Identify underused or unnecessary subscriptions using AI analysis.</p>
+                    </div>
+                  </div>
+                  <div class="auth-feature">
+                    <span class="auth-feature-icon" aria-hidden="true">▥</span>
+                    <div class="auth-feature-copy">
+                      <strong>Track Spending</strong>
+                      <p>Visualize monthly and long-term subscription costs.</p>
+                    </div>
+                  </div>
+                  <div class="auth-feature">
+                    <span class="auth-feature-icon" aria-hidden="true">✧</span>
+                    <div class="auth-feature-copy">
+                      <strong>Get Insights</strong>
+                      <p>Receive personalized recommendations to save money.</p>
+                    </div>
+                  </div>
+                  <div class="auth-feature">
+                    <span class="auth-feature-icon" aria-hidden="true">✓</span>
+                    <div class="auth-feature-copy">
+                      <strong>Stay in Control</strong>
+                      <p>Manage subscriptions effectively and avoid waste.</p>
+                    </div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with auth_column:
+            with st.container(border=True, key="auth-card"):
+                login_tab, registration_tab = st.tabs(["Login", "Create account"])
+                with login_tab:
+                    st.markdown(
+                        '<div class="auth-card-heading"><h2>Welcome Back!</h2>'
+                        '<p>Sign in to continue to your subscription workspace.</p></div>',
+                        unsafe_allow_html=True,
+                    )
+                    with st.form("login_form"):
+                        login_username = st.text_input(
+                            "Username",
+                            placeholder="Enter your username",
+                            key="login_username",
+                        )
+                        login_password = st.text_input(
+                            "Password",
+                            type="password",
+                            placeholder="Enter your password",
+                            key="login_password",
+                        )
+                        login_submitted = st.form_submit_button(
+                            "Log in",
+                            type="primary",
+                            icon=":material/login:",
+                            width="stretch",
+                            key="login-submit",
+                        )
+                    if login_submitted:
+                        try:
+                            user = authenticate_user(login_username, login_password)
+                            if user is None:
+                                st.error("Invalid username or password.")
+                            else:
+                                start_user_session(*user)
+                                st.rerun()
+                        except (OSError, sqlite3.Error, ValueError) as error:
+                            st.error(f"Could not log in: {error}")
+
+                with registration_tab:
+                    st.markdown(
+                        '<div class="auth-card-heading"><h2>Create your account</h2>'
+                        '<p>Save and review your subscriptions in one place.</p></div>',
+                        unsafe_allow_html=True,
+                    )
+                    with st.form("registration_form"):
+                        registration_username = st.text_input(
+                            "Username",
+                            placeholder="Choose a username",
+                            key="registration_username",
+                        )
+                        registration_password = st.text_input(
+                            "Password",
+                            type="password",
+                            placeholder="Create a password",
+                            help="Use at least 8 characters.",
+                            key="registration_password",
+                        )
+                        confirmation_password = st.text_input(
+                            "Confirm password",
+                            type="password",
+                            placeholder="Enter your password again",
+                            key="confirmation_password",
+                        )
+                        registration_submitted = st.form_submit_button(
+                            "Create account",
+                            type="primary",
+                            icon=":material/person_add:",
+                            width="stretch",
+                            key="registration-submit",
+                        )
+                    if registration_submitted:
+                        if registration_password != confirmation_password:
+                            st.error("The passwords do not match.")
+                        else:
+                            try:
+                                new_user_id = register_user(
+                                    registration_username, registration_password
+                                )
+                                start_user_session(
+                                    new_user_id, registration_username.strip()
+                                )
+                                st.rerun()
+                            except UsernameAlreadyExists as error:
+                                st.error(str(error))
+                            except RegistrationError as error:
+                                st.error(str(error))
+                            except (OSError, sqlite3.Error, ValueError) as error:
+                                st.error(f"Could not create the account: {error}")
+                st.markdown(
+                    '<div class="auth-security"><span class="auth-security-icon" '
+                    'aria-hidden="true"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+                    '<path d="M12 3 19 6v5c0 4.7-2.9 8-7 10-4.1-2-7-5.3-7-10V6l7-3Z"/>'
+                    '<path d="m9 12 2 2 4-4"/></svg></span>'
+                    '<span>Your data is secure and private</span></div>',
+                    unsafe_allow_html=True,
+                )
+        with illustration_column:
+            st.markdown(
+                """
+                <div class="auth-illustration" role="img"
+                     aria-label="Illustration of a subscription spending analytics dashboard">
+                  <span class="auth-float auth-float-one" aria-hidden="true">▶</span>
+                  <span class="auth-float auth-float-two" aria-hidden="true">♫</span>
+                  <span class="auth-float auth-float-three" aria-hidden="true">☁</span>
+                  <span class="auth-float auth-float-four" aria-hidden="true">✦</span>
+                  <svg viewBox="0 0 380 300" xmlns="http://www.w3.org/2000/svg"
+                       aria-hidden="true" focusable="false">
+                    <defs>
+                      <linearGradient id="laptopScreen" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#173a5d"/>
+                        <stop offset="1" stop-color="#176f78"/>
+                      </linearGradient>
+                      <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#44d2bd" stop-opacity=".42"/>
+                        <stop offset="1" stop-color="#44d2bd" stop-opacity=".02"/>
+                      </linearGradient>
+                    </defs>
+                    <ellipse cx="190" cy="254" rx="137" ry="15" fill="#b9d1db" opacity=".42"/>
+                    <rect x="76" y="46" width="228" height="166" rx="15" fill="#12314e"/>
+                    <rect x="84" y="54" width="212" height="150" rx="9" fill="#f8fcff"/>
+                    <rect x="84" y="54" width="212" height="24" rx="9" fill="url(#laptopScreen)"/>
+                    <circle cx="97" cy="66" r="2.5" fill="#a5e8df"/>
+                    <circle cx="106" cy="66" r="2.5" fill="#72c9c4"/>
+                    <rect x="96" y="89" width="67" height="42" rx="7" fill="#edf5f8"/>
+                    <text x="104" y="102" fill="#647b8c" font-size="7" font-family="Arial,sans-serif">MONTHLY SPEND</text>
+                    <text x="104" y="120" fill="#173a5d" font-size="14" font-weight="700" font-family="Arial,sans-serif">$248</text>
+                    <rect x="170" y="89" width="114" height="69" rx="7" fill="#fff" stroke="#e4edf2"/>
+                    <path d="M180 144H274M180 126H274M180 108H274" stroke="#e7eef3" stroke-width="1"/>
+                    <path d="M182 139L198 128L214 133L230 111L247 119L270 97V151H182Z" fill="url(#chartFill)"/>
+                    <path d="M182 139L198 128L214 133L230 111L247 119L270 97" fill="none" stroke="#22a99d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="230" cy="111" r="3" fill="#fff" stroke="#22a99d" stroke-width="2"/>
+                    <rect x="96" y="140" width="67" height="50" rx="7" fill="#fff" stroke="#e4edf2"/>
+                    <text x="104" y="153" fill="#647b8c" font-size="7" font-family="Arial,sans-serif">TOP SERVICES</text>
+                    <rect x="104" y="161" width="34" height="4" rx="2" fill="#dbe8ee"/>
+                    <rect x="104" y="161" width="23" height="4" rx="2" fill="#2c82bd"/>
+                    <rect x="104" y="171" width="44" height="4" rx="2" fill="#dbe8ee"/>
+                    <rect x="104" y="171" width="29" height="4" rx="2" fill="#32b5a5"/>
+                    <rect x="104" y="181" width="39" height="4" rx="2" fill="#dbe8ee"/>
+                    <rect x="104" y="181" width="15" height="4" rx="2" fill="#e1ae61"/>
+                    <rect x="170" y="165" width="114" height="25" rx="7" fill="#eaf7f5"/>
+                    <circle cx="183" cy="177" r="5" fill="#23a99b"/>
+                    <path d="M181 177l1.5 1.5L185 175" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                    <text x="193" y="175" fill="#35716f" font-size="7" font-family="Arial,sans-serif">POTENTIAL SAVINGS</text>
+                    <text x="193" y="184" fill="#173a5d" font-size="9" font-weight="700" font-family="Arial,sans-serif">$36 / month</text>
+                    <path d="M61 215H319L300 233H80Z" fill="#d6e5ec"/>
+                    <path d="M61 215H319L309 225H71Z" fill="#eff6f8"/>
+                    <rect x="155" y="217" width="70" height="3" rx="1.5" fill="#c5d8e1"/>
+                  </svg>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    st.markdown(
+        """
+        <div class="auth-page-waves" aria-hidden="true">
+          <svg viewBox="0 0 1440 60" preserveAspectRatio="none"
+               xmlns="http://www.w3.org/2000/svg">
+            <path d="M0 24C210 56 370 10 590 28s360 28 520 3 220-29 330-4v33H0Z"
+                  fill="#91B4C8" fill-opacity=".16"/>
+            <path d="M0 38c190-26 350 13 540 4s330-24 510-5 270 18 390 2v21H0Z"
+                  fill="#9EB9D2" fill-opacity=".13"/>
+          </svg>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
+st.sidebar.caption(f"Signed in as {st.session_state.auth_username}")
+if st.sidebar.button("Log out", key="logout"):
+    clear_user_session()
+    st.rerun()
+
+if "draft_data" not in st.session_state:
+    st.session_state.draft_data = DEFAULT_DATA.copy()
+if "upload_signature" not in st.session_state:
+    st.session_state.upload_signature = None
+if "upload_error" not in st.session_state:
+    st.session_state.upload_error = None
+if "analysis_data" not in st.session_state:
+    st.session_state.analysis_data = None
+if "analysis_fingerprint" not in st.session_state:
+    st.session_state.analysis_fingerprint = None
+
+st.sidebar.markdown(
+    """
+    <div style="padding:.5rem 0 1rem">
+      <div style="font-size:1.6rem">◈</div>
+      <div style="font-family:Manrope,sans-serif;font-size:1.05rem;font-weight:800">SUBSCRIPTION<br>INTELLIGENCE</div>
+      <div style="color:#a9bfd5;font-size:.78rem;margin-top:.3rem">Personal finance dashboard</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+page = st.sidebar.radio("Navigation", ["Dashboard", "About Project"])
+st.sidebar.markdown("---")
+st.sidebar.caption("A decision-support project. Review estimates before acting.")
+
+if page == "About Project":
+    render_about()
+    st.stop()
+
+st.markdown(
+    """
+    <div class="hero">
+      <div class="hero-kicker">Subscription intelligence · Spend with intention</div>
+      <h1>AI Subscription Waste Detector</h1>
+      <p>See what your subscriptions cost, understand how you use them, and find the services that may deserve a closer look.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+intro_left, intro_right = st.columns([1.35, 1])
+with intro_left:
+    st.markdown('<div class="section-eyebrow">Start here</div>', unsafe_allow_html=True)
+    st.subheader("Bring your subscription data")
+    st.write(
+        "Upload a CSV or edit the sample table below. Add one subscription per row, "
+        "then run the analysis to see model estimates, spending insights, and a report."
+    )
+with intro_right:
+    st.markdown(
+        '<div class="soft-card"><strong>What you will get</strong>'
+        "<p>Risk estimates from your saved Random Forest model, a spending overview, "
+        "usage insights, and a cancellation what-if calculator.</p></div>",
+        unsafe_allow_html=True,
+    )
+
+with st.container(border=True):
+    upload_col, help_col = st.columns([1.15, 1])
+    with upload_col:
+        uploaded_file = st.file_uploader(
+            "Upload subscription data",
+            type=["csv"],
+            help="CSV must include all seven columns listed in the required schema.",
+            key="subscription_csv_upload",
+        )
+    with help_col:
+        st.markdown("**Required CSV columns**")
+        st.code(", ".join(REQUIRED_COLUMNS), language=None)
+        st.caption(
+            "The included sample file is `dataset/sample_subscriptions.csv`. "
+            "Your uploaded rows remain editable before analysis."
+        )
+
+if uploaded_file is not None:
+    uploaded_bytes = uploaded_file.getvalue()
+    current_upload_signature = sha256(uploaded_bytes).hexdigest()
+    if current_upload_signature != st.session_state.upload_signature:
+        st.session_state.upload_signature = current_upload_signature
+        st.session_state.upload_error = None
+        try:
+            uploaded_data = pd.read_csv(BytesIO(uploaded_bytes))
+            missing = [
+                column for column in REQUIRED_COLUMNS
+                if column not in uploaded_data.columns
+            ]
+            if missing:
+                st.session_state.upload_error = (
+                    "Missing CSV columns: " + ", ".join(missing)
+                )
+            elif uploaded_data.empty:
+                st.session_state.upload_error = (
+                    "The uploaded CSV contains no subscription rows."
+                )
+            else:
+                st.session_state.draft_data = uploaded_data
+                st.session_state.subscription_data_fingerprint = None
+                st.session_state.pop("subscription_editor", None)
+                st.success(
+                    f"Loaded {len(uploaded_data)} subscription row(s). "
+                    "Review or edit the table before analysis."
+                )
+        except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as error:
+            st.session_state.upload_error = f"Could not read the CSV: {error}"
+        except OSError as error:
+            st.session_state.upload_error = f"Could not access the uploaded file: {error}"
+elif (
+    st.session_state.upload_signature is not None
+    or st.session_state.upload_error is not None
+):
+    if st.button("Restore sample data", key="restore_sample_data"):
+        st.session_state.draft_data = DEFAULT_DATA.copy()
+        st.session_state.upload_signature = None
+        st.session_state.upload_error = None
+        st.session_state.analysis_data = None
+        st.session_state.analysis_fingerprint = None
+        st.session_state.subscription_data_fingerprint = None
+        st.session_state.pop("subscription_editor", None)
+
+upload_error = st.session_state.upload_error
+if upload_error:
+    st.error(upload_error)
+
+st.markdown('<div class="section-eyebrow">Your data</div>', unsafe_allow_html=True)
+st.subheader("Review and edit subscriptions")
+st.caption(
+    "Costs should be monthly. Usage days must be between 0 and 31. "
+    "Edits are kept when you switch between Dashboard and About Project."
+)
+input_data = st.data_editor(
+    st.session_state.draft_data,
+    key="subscription_editor",
+    num_rows="dynamic",
+    width="stretch",
+    hide_index=True,
+    column_config={
+        "subscription_name": st.column_config.TextColumn(
+            "Subscription", required=True, width=160
+        ),
+        "category": st.column_config.TextColumn(
+            "Category", required=True, width=145
+        ),
+        "monthly_cost": st.column_config.NumberColumn(
+            "Monthly cost (₹)", min_value=0, width=145
+        ),
+        "usage_days": st.column_config.NumberColumn(
+            "Usage days", min_value=0, max_value=31, width=125
+        ),
+        "usage_hours": st.column_config.NumberColumn(
+            "Usage hours", min_value=0, width=120
+        ),
+        "months_subscribed": st.column_config.NumberColumn(
+            "Months subscribed", min_value=1, width=145
+        ),
+        "previous_usage_days": st.column_config.NumberColumn(
+            "Previous usage days", min_value=0, max_value=31, width=160
+        ),
+    },
+)
+st.session_state.draft_data = input_data
+
+current_fingerprint = fingerprint(input_data)
+if current_fingerprint != st.session_state.subscription_data_fingerprint:
+    try:
+        save_subscriptions(st.session_state.auth_user_id, input_data)
+    except (OSError, sqlite3.Error, TypeError, ValueError) as error:
+        st.error(f"Could not save your subscription data: {error}")
+    else:
+        st.session_state.subscription_data_fingerprint = current_fingerprint
+
+has_current_analysis = (
+    st.session_state.analysis_data is not None
+    and st.session_state.analysis_fingerprint == current_fingerprint
+)
+if st.session_state.analysis_data is not None and not has_current_analysis:
+    st.info("Your subscription data changed. Analyze again to refresh the results.")
+
+button_col, note_col = st.columns([1, 1.5], vertical_alignment="center")
+with button_col:
+    analyze_clicked = st.button(
+        "Analyze All Subscriptions",
+        type="primary",
+        icon=":material/analytics:",
+        width="stretch",
+        disabled=upload_error is not None,
+    )
+with note_col:
+    st.caption(
+        "The Random Forest runs when you analyze or update the data—not on "
+        "ordinary page reruns."
+    )
+
+if analyze_clicked:
+    validated_data, validation_errors = validate_input(input_data)
+    if validation_errors:
+        for message in validation_errors:
+            st.error(message)
+    else:
+        try:
+            with st.spinner("Analyzing subscriptions with the trained Random Forest..."):
+                model = load_model()
+                model_data = prepare_model_input(validated_data)
+                predictions = model.predict(model_data)
+                probabilities = model.predict_proba(model_data)[:, 1] * 100
+
+            analyzed_data = validated_data.copy()
+            analyzed_data["waste_risk"] = probabilities.round(1)
+            analyzed_data["prediction"] = predictions
+            analyzed_data["usage_change"] = (
+                analyzed_data["usage_days"]
+                - analyzed_data["previous_usage_days"]
+            )
+            analyzed_data["review_cost"] = analyzed_data.apply(
+                lambda row: row["monthly_cost"]
+                if row["waste_risk"] >= 80
+                else 0,
+                axis=1,
+            )
+            st.session_state.analysis_data = analyzed_data
+            st.session_state.analysis_fingerprint = fingerprint(input_data)
+            st.session_state.pop("cancellation_simulator", None)
+            st.success(
+                f"Analysis complete for {len(analyzed_data)} subscription(s)."
+            )
+            has_current_analysis = True
+        except (FileNotFoundError, OSError) as error:
+            st.error(f"The trained model could not be loaded: {error}")
+        except Exception as error:
+            st.error(f"Analysis failed: {error}")
+            st.info(
+                "Check the model file and confirm the data follows the required "
+                "columns and numeric ranges."
+            )
+
+if has_current_analysis:
+    data = st.session_state.analysis_data.copy()
+    total_spending = float(data["monthly_cost"].sum())
+    review_cost = float(data["review_cost"].sum())
+    high_risk = data[data["waste_risk"] >= 80]
+    high_risk_count = int(len(high_risk))
+    average_risk = float(data["waste_risk"].mean())
+    total_monthly_cost = total_spending
+
+    overview_tab, ai_tab, spending_tab, insights_tab, reports_tab = st.tabs(
+        ["Overview", "AI Analysis", "Spending & Savings", "Insights", "Reports"]
+    )
+
+    with overview_tab:
+        st.markdown('<div class="section-eyebrow">At a glance</div>', unsafe_allow_html=True)
+        st.subheader("Your subscription snapshot")
+        metrics = st.columns(4)
+        metrics[0].metric("Monthly spending", f"₹{total_spending:,.0f}")
+        metrics[1].metric("Cost flagged to review", f"₹{review_cost:,.0f}")
+        metrics[2].metric("High-risk subscriptions", high_risk_count)
+        metrics[3].metric("Average estimated risk", f"{average_risk:.1f}%")
+        st.caption(
+            "Review cost is the full monthly price of subscriptions with estimated "
+            "risk at or above 80%; it is not guaranteed savings."
+        )
+        st.subheader("Subscriptions included")
+        render_subscription_icon_list(data)
+        left, right = st.columns(2)
+        with left:
+            st.subheader("Monthly spend by subscription")
+            spending_chart = px.bar(
+                data,
+                x="subscription_name",
+                y="monthly_cost",
+                color="category",
+                labels={
+                    "subscription_name": "Subscription",
+                    "monthly_cost": "Monthly cost (₹)",
+                    "category": "Category",
+                },
+                color_discrete_sequence=["#2864e8", "#1eb6a5", "#5e82cb", "#81c7c0"],
+            )
+            spending_chart.update_layout(xaxis_title=None, yaxis_title="Monthly cost (₹)")
+            st.plotly_chart(
+                style_chart(add_service_icons_to_chart(spending_chart, data)),
+                width="stretch",
+            )
+        with right:
+            st.subheader("Spending distribution")
+            if total_spending > 0:
+                pie_chart = px.pie(
+                    data,
+                    names="subscription_name",
+                    values="monthly_cost",
+                    hole=0.58,
+                    color_discrete_sequence=["#2864e8", "#1eb6a5", "#5e82cb", "#81c7c0"],
+                )
+                st.plotly_chart(style_chart(pie_chart), width="stretch")
+            else:
+                st.info("There is no subscription spending to display.")
+
+    with ai_tab:
+        st.markdown('<div class="section-eyebrow">Model results</div>', unsafe_allow_html=True)
+        st.subheader("AI subscription analysis")
+        st.write(
+            "Predictions use the trained Random Forest pipeline and the original "
+            "model input features. The risk score is an estimate, not a guaranteed probability."
+        )
+        render_subscription_icon_list(data, include_risk=True)
+        result_data = data.copy()
+        result_data["Assessment"] = result_data["prediction"].map(
+            {1: "Potentially wasteful — review", 0: "Appears useful"}
+        ).fillna(result_data["prediction"].astype(str))
+        assessment_view = result_data.rename(
+            columns={
+                "subscription_name": "Subscription",
+                "category": "Category",
+                "monthly_cost": "Monthly cost (₹)",
+                "usage_days": "Usage days",
+                "previous_usage_days": "Previous usage days",
+                "waste_risk": "Waste risk (%)",
+                "review_cost": "Cost to review (₹)",
+                "usage_change": "Usage change (days)",
+            }
+        )
+        st.dataframe(
+            assessment_view[
+                [
+                    "Subscription",
+                    "Category",
+                    "Monthly cost (₹)",
+                    "Usage days",
+                    "Previous usage days",
+                    "Waste risk (%)",
+                    "Assessment",
+                    "Cost to review (₹)",
+                ]
+            ],
+            width="stretch",
+            hide_index=True,
+        )
+        risk_chart = px.bar(
+            data,
+            x="subscription_name",
+            y="waste_risk",
+            color="waste_risk",
+            color_continuous_scale=["#29b78d", "#f3c45d", "#e46c73"],
+            range_y=[0, 100],
+            labels={
+                "subscription_name": "Subscription",
+                "waste_risk": "Estimated risk (%)",
+            },
+        )
+        st.plotly_chart(
+            style_chart(add_service_icons_to_chart(risk_chart, data)),
+            width="stretch",
+        )
+        st.subheader("Subscriptions requiring review")
+        if not high_risk.empty:
+            for _, row in high_risk.iterrows():
+                st.warning(
+                    f"**{row['subscription_name']}** — {row['waste_risk']:.1f}% "
+                    f"estimated waste risk; monthly price ₹{row['monthly_cost']:,.0f}. "
+                    "Review whether the service is still useful."
+                )
+        else:
+            st.success("No subscriptions crossed the high-risk review threshold.")
+
+    with spending_tab:
+        st.markdown('<div class="section-eyebrow">Plan ahead</div>', unsafe_allow_html=True)
+        st.subheader("Spending forecast")
+        forecast_months = pd.DataFrame(
+            {
+                "Month": [
+                    "Current",
+                    "Month 1",
+                    "Month 2",
+                    "Month 3",
+                    "Month 4",
+                    "Month 5",
+                    "Month 6",
+                ],
+                "Estimated Spending (₹)": [
+                    total_monthly_cost * month for month in range(7)
+                ],
+            }
+        )
+        st.metric(
+            "Estimated spending over 6 months",
+            f"₹{total_monthly_cost * 6:,.0f}",
+        )
+        forecast_chart = px.line(
+            forecast_months,
+            x="Month",
+            y="Estimated Spending (₹)",
+            markers=True,
+            color_discrete_sequence=["#2864e8"],
+        )
+        st.plotly_chart(style_chart(forecast_chart), width="stretch")
+        st.info(
+            "This baseline assumes all current subscriptions continue at the same "
+            "monthly price. It does not predict price changes or future cancellations."
+        )
+
+        st.divider()
+        st.subheader("Cancellation savings simulator")
+        st.write(
+            "Select subscriptions to simulate cancelling and estimate potential savings."
+        )
+        names = data["subscription_name"].astype(str).tolist()
+        selected_to_cancel = st.multiselect(
+            "Subscriptions to include in the simulation",
+            options=names,
+            default=[],
+            key="cancellation_simulator",
+        )
+        selected_mask = data["subscription_name"].astype(str).isin(selected_to_cancel)
+        monthly_savings = float(data.loc[selected_mask, "monthly_cost"].sum())
+        remaining_monthly_cost = max(0, total_monthly_cost - monthly_savings)
+        savings_metrics = st.columns(3)
+        savings_metrics[0].metric("Current monthly spending", f"₹{total_monthly_cost:,.0f}")
+        savings_metrics[1].metric("Potential monthly savings", f"₹{monthly_savings:,.0f}")
+        savings_metrics[2].metric("Potential 6-month savings", f"₹{monthly_savings * 6:,.0f}")
+        st.write(
+            f"**Monthly spending after simulated cancellations:** "
+            f"₹{remaining_monthly_cost:,.0f}"
+        )
+        if selected_to_cancel:
+            st.success(
+                "Selected for cancellation review: " + ", ".join(selected_to_cancel)
+            )
+        else:
+            st.info("Select one or more subscriptions to see potential savings.")
+
+    with insights_tab:
+        st.markdown('<div class="section-eyebrow">Usage intelligence</div>', unsafe_allow_html=True)
+        st.subheader("Usage changes")
+        for _, row in data.iterrows():
+            change = row["usage_change"]
+            if change < 0:
+                message = f"Usage decreased by {abs(change):.0f} day(s) compared with last month."
+            elif change > 0:
+                message = f"Usage increased by {change:.0f} day(s) compared with last month."
+            else:
+                message = "Usage stayed the same as last month."
+            st.markdown(f"- **{row['subscription_name']}:** {message}")
+
+        st.divider()
+        st.subheader("Intelligent waste investigation")
+        st.write(
+            "Usage changes and cost observations below are rule-based explanations "
+            "from the data you supplied."
+        )
+        for _, row in data.iterrows():
+            findings, suggestions, annual_cost = build_findings(row)
+            with st.expander(f"Investigate {row['subscription_name']}"):
+                st.write(f"**Monthly price:** ₹{float(row['monthly_cost']):,.0f}")
+                st.write(f"**Annual cost:** ₹{annual_cost:,.0f}")
+                st.write(f"**Current usage:** {float(row['usage_days']):.0f} day(s)")
+                st.markdown("**Findings**")
+                for finding in findings:
+                    st.markdown(f"- {finding}")
+                st.markdown("**Suggested actions**")
+                for suggestion in suggestions or [
+                    "Continue monitoring usage and review whether the subscription meets your needs."
+                ]:
+                    st.markdown(f"- {suggestion}")
+                st.caption(
+                    "These observations use simple rules; they are not independent "
+                    "AI proof that a service is wasteful."
+                )
+
+        st.divider()
+        st.subheader("Possible category overlap")
+        st.write(
+            "Multiple subscriptions in the same supported category may offer "
+            "overlapping services. Check each provider's features before deciding."
+        )
+        overlap_found = False
+        for category in [
+            "Entertainment",
+            "Music",
+            "Cloud Storage",
+            "Education",
+            "Software",
+        ]:
+            matching = data[
+                data["category"].astype(str).str.strip().str.lower()
+                == category.lower()
+            ]
+            if len(matching) > 1:
+                overlap_found = True
+                names_in_category = matching["subscription_name"].astype(str).tolist()
+                combined_cost = matching["monthly_cost"].sum()
+                st.warning(
+                    f"**Possible overlap in {category}:** "
+                    f"{', '.join(names_in_category)}. Combined monthly cost: "
+                    f"₹{combined_cost:,.0f}."
+                )
+        if not overlap_found:
+            st.success(
+                "No category-level overlaps were found. This does not guarantee "
+                "that services have no overlapping features."
+            )
+
+        st.divider()
+        st.subheader("Experimental usage forecast")
+        st.caption(
+            "This optional LSTM forecast uses the included usage history and is "
+            "not validated for real-world use."
+        )
+        if HISTORY_PATH.exists():
+            try:
+                history_df = pd.read_csv(HISTORY_PATH)
+                expected_history_columns = {
+                    "subscription_name",
+                    "month",
+                    "usage_days",
+                }
+                missing_history_columns = (
+                    expected_history_columns - set(history_df.columns)
+                )
+                if missing_history_columns:
+                    st.error(
+                        "Usage history is missing columns: "
+                        + ", ".join(sorted(missing_history_columns))
+                    )
+                else:
+                    forecast_names = (
+                        history_df["subscription_name"].dropna().unique().tolist()
+                    )
+                    if not forecast_names:
+                        st.warning("No subscriptions were found in usage history.")
+                    else:
+                        selected_name = st.selectbox(
+                            "Select subscription to forecast",
+                            forecast_names,
+                            key="forecast_subscription",
+                        )
+                        history_rows = history_df[
+                            history_df["subscription_name"] == selected_name
+                        ].copy()
+                        history_rows["month"] = pd.to_numeric(
+                            history_rows["month"], errors="coerce"
+                        )
+                        history_rows["usage_days"] = pd.to_numeric(
+                            history_rows["usage_days"], errors="coerce"
+                        )
+                        history = (
+                            history_rows.dropna(subset=["month", "usage_days"])
+                            .sort_values("month")["usage_days"]
+                            .to_numpy(dtype=float)
+                        )
+                        if len(history) < 5:
+                            st.warning("At least five months of valid history are required.")
+                        else:
+                            try:
+                                with st.spinner("Preparing the experimental forecast..."):
+                                    predicted_days = forecast_usage(tuple(history.tolist()))
+                                forecast_metrics = st.columns(2)
+                                forecast_metrics[0].metric(
+                                    "Predicted usage next month",
+                                    f"{predicted_days:.1f} days",
+                                )
+                                forecast_metrics[1].metric(
+                                    "Latest recorded usage",
+                                    f"{history[-1]:.0f} days",
+                                )
+                                history_chart = px.line(
+                                    pd.DataFrame(
+                                        {
+                                            "Month": range(1, len(history) + 1),
+                                            "Usage days": history,
+                                        }
+                                    ),
+                                    x="Month",
+                                    y="Usage days",
+                                    markers=True,
+                                    color_discrete_sequence=["#1a9c91"],
+                                )
+                                st.plotly_chart(
+                                    style_chart(history_chart),
+                                    width="stretch",
+                                )
+                                if predicted_days < 5:
+                                    st.warning(
+                                        "Forecast indicates very low usage. Review whether "
+                                        "the subscription is still worth its cost."
+                                    )
+                                elif predicted_days < 12:
+                                    st.info(
+                                        "Forecast indicates relatively low usage. "
+                                        "Monitor next month's actual usage."
+                                    )
+                                else:
+                                    st.success(
+                                        "Forecast indicates moderate or high usage."
+                                    )
+                            except (ImportError, ModuleNotFoundError) as error:
+                                st.error(
+                                    "The optional LSTM forecast needs TensorFlow/Keras "
+                                    f"installed in this environment: {error}"
+                                )
+                            except Exception as error:
+                                st.error(f"Forecast could not be generated: {error}")
+            except (OSError, pd.errors.ParserError, UnicodeDecodeError) as error:
+                st.error(f"Usage history could not be read: {error}")
+        else:
+            st.warning("The optional forecast needs dataset/usage_history.csv.")
+
+        st.divider()
+        st.subheader("Personalized recommendations")
+        st.write(
+            "Suggestions use subscription cost, current and previous usage, and "
+            "the model's estimated risk."
+        )
+        for _, row in data.iterrows():
+            name = row["subscription_name"]
+            cost = float(row["monthly_cost"])
+            current = float(row["usage_days"])
+            previous = float(row["previous_usage_days"])
+            risk = float(row["waste_risk"])
+            annual_cost = cost * 12
+            suggestions = []
+            if current == 0:
+                suggestions.append(
+                    "No usage was recorded this month. Check whether you still need this subscription."
+                )
+            elif current <= 3:
+                suggestions.append(
+                    "Usage is very low. Compare the subscription's benefits with its monthly cost."
+                )
+            if previous > 0 and current < previous:
+                decrease = (previous - current) / previous * 100
+                suggestions.append(
+                    f"Usage has fallen by {decrease:.1f}% since the previous month. "
+                    "Monitor this trend."
+                )
+            if cost >= 500:
+                suggestions.append(
+                    f"This subscription costs ₹{annual_cost:,.0f} per year. "
+                    "Review whether the benefits justify the expense."
+                )
+            if risk >= 80:
+                suggestions.append(
+                    "The experimental ML model flags this subscription as high risk. "
+                    "Review the evidence before deciding."
+                )
+            if not suggestions:
+                suggestions.append(
+                    "Usage appears relatively frequent. Continue monitoring it and "
+                    "check whether the plan suits your needs."
+                )
+            with st.expander(f"Recommendations for {name}"):
+                st.write(f"**Monthly cost:** ₹{cost:,.0f}")
+                st.write(f"**Annual cost:** ₹{annual_cost:,.0f}")
+                st.write(f"**Usage this month:** {current:.0f} days")
+                for suggestion in suggestions:
+                    st.markdown(f"- {suggestion}")
+                st.caption(
+                    "Suggestions use supplied data and experimental model output; "
+                    "they do not guarantee savings."
+                )
+
+    with reports_tab:
+        st.markdown('<div class="section-eyebrow">Export</div>', unsafe_allow_html=True)
+        st.subheader("Detailed analysis report")
+        st.write(
+            "Review all input fields, model outputs, estimated risk, usage change, "
+            "and the monthly cost flagged for review."
+        )
+        display_data = data.rename(
+            columns={
+                "subscription_name": "Subscription",
+                "category": "Category",
+                "monthly_cost": "Monthly Cost (₹)",
+                "usage_days": "Usage Days",
+                "waste_risk": "Waste Risk (%)",
+                "review_cost": "Cost to Review (₹)",
+                "usage_change": "Usage Change (Days)",
+            }
+        )
+        st.dataframe(
+            display_data,
+            width="stretch",
+            hide_index=True,
+        )
+        st.download_button(
+            "Download Analysis as PDF",
+            data=build_pdf_report(data, total_spending, review_cost),
+            file_name="subscription_analysis_report.pdf",
+            mime="application/pdf",
+            type="primary",
+            icon=":material/picture_as_pdf:",
+            key="pdf-report-download",
+        )
+        st.caption(
+            "Model limitation: the current model was trained on synthetic labels. "
+            "Its scores are experimental estimates, not validated real-world "
+            "probabilities. Usage explanations are based on the supplied data."
+        )

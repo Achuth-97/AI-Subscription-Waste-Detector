@@ -51,6 +51,9 @@ except ImportError:
 MODEL_PATH = ROOT / "models" / "subscription_model.pkl"
 HISTORY_PATH = ROOT / "dataset" / "usage_history.csv"
 
+HIGH_WASTE_RISK_THRESHOLD = 80
+POSSIBLE_WASTE_RISK_THRESHOLD = 50
+
 REQUIRED_COLUMNS = [
     "subscription_name",
     "category",
@@ -67,6 +70,15 @@ NUMERIC_COLUMNS = [
     "months_subscribed",
     "previous_usage_days",
 ]
+
+
+def waste_prediction_label(waste_risk):
+    if waste_risk >= HIGH_WASTE_RISK_THRESHOLD:
+        return "High Waste"
+    if waste_risk >= POSSIBLE_WASTE_RISK_THRESHOLD:
+        return "Possible Waste"
+    return "Good Value"
+
 
 DEFAULT_DATA = pd.DataFrame(
     {
@@ -165,7 +177,7 @@ def build_pdf_report(data, total_spending, review_cost):
         ("Months Subscribed", "months_subscribed"),
         ("Previous Usage Days", "previous_usage_days"),
         ("AI Waste Risk (%)", "waste_risk"),
-        ("Prediction", "prediction"),
+        ("Waste Prediction", "waste_prediction"),
         ("Usage Change (Days)", "usage_change"),
         ("Cost to Review (₹)", "review_cost"),
     ]
@@ -270,6 +282,15 @@ def build_pdf_report(data, total_spending, review_cost):
         summary,
         Spacer(1, 14),
         report_table,
+        Spacer(1, 8),
+        Paragraph(
+            "Waste Prediction is assigned by application risk bands, not by a "
+            "third Random Forest class: High Waste at 80% or above, Possible "
+            "Waste from 50% to below 80%, and Good Value below 50%. The model "
+            "uses synthetic labels; its scores are experimental estimates, "
+            "not validated real-world probabilities.",
+            body_style,
+        ),
     ]
     document.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buffer.getvalue()
@@ -2135,9 +2156,10 @@ def render_about():
         st.markdown(
             "The app derives usage percentage and month-over-month usage change, "
             "then sends those values together with the supplied cost, usage, "
-            "tenure, and category features to the saved Random Forest pipeline. "
-            "Its prediction and class-1 score are displayed as an assessment "
-            "and risk estimate."
+            "tenure, and category features to the saved binary Random Forest "
+            "pipeline. The displayed Waste Prediction label uses the class-1 "
+            "score and application risk bands; Possible Waste is not a third "
+            "model class."
         )
         st.subheader("Limitations")
         st.warning(
@@ -2656,7 +2678,7 @@ if analyze_clicked:
             )
             analyzed_data["review_cost"] = analyzed_data.apply(
                 lambda row: row["monthly_cost"]
-                if row["waste_risk"] >= 80
+                if row["waste_risk"] >= HIGH_WASTE_RISK_THRESHOLD
                 else 0,
                 axis=1,
             )
@@ -2678,9 +2700,12 @@ if analyze_clicked:
 
 if has_current_analysis:
     data = st.session_state.analysis_data.copy()
+    data["waste_prediction"] = data["waste_risk"].map(waste_prediction_label)
     total_spending = float(data["monthly_cost"].sum())
     review_cost = float(data["review_cost"].sum())
-    high_risk = data[data["waste_risk"] >= 80]
+    high_risk = data[
+        data["waste_risk"] >= HIGH_WASTE_RISK_THRESHOLD
+    ]
     high_risk_count = int(len(high_risk))
     average_risk = float(data["waste_risk"].mean())
     total_monthly_cost = total_spending
@@ -2744,11 +2769,13 @@ if has_current_analysis:
             "Predictions use the trained Random Forest pipeline and the original "
             "model input features. The risk score is an estimate, not a guaranteed probability."
         )
+        st.caption(
+            "Waste Prediction uses application risk bands: High Waste at 80% or "
+            "above, Possible Waste from 50% to below 80%, and Good Value below "
+            "50%. Possible Waste is not a third Random Forest class."
+        )
         render_subscription_icon_list(data, include_risk=True)
         result_data = data.copy()
-        result_data["Assessment"] = result_data["prediction"].map(
-            {1: "Potentially wasteful — review", 0: "Appears useful"}
-        ).fillna(result_data["prediction"].astype(str))
         assessment_view = result_data.rename(
             columns={
                 "subscription_name": "Subscription",
@@ -2757,6 +2784,7 @@ if has_current_analysis:
                 "usage_days": "Usage days",
                 "previous_usage_days": "Previous usage days",
                 "waste_risk": "Waste risk (%)",
+                "waste_prediction": "Waste Prediction",
                 "review_cost": "Cost to review (₹)",
                 "usage_change": "Usage change (days)",
             }
@@ -2770,7 +2798,7 @@ if has_current_analysis:
                     "Usage days",
                     "Previous usage days",
                     "Waste risk (%)",
-                    "Assessment",
+                    "Waste Prediction",
                     "Cost to review (₹)",
                 ]
             ],
@@ -3079,7 +3107,7 @@ if has_current_analysis:
                     f"This subscription costs ₹{annual_cost:,.0f} per year. "
                     "Review whether the benefits justify the expense."
                 )
-            if risk >= 80:
+            if risk >= HIGH_WASTE_RISK_THRESHOLD:
                 suggestions.append(
                     "The experimental ML model flags this subscription as high risk. "
                     "Review the evidence before deciding."
@@ -3107,13 +3135,14 @@ if has_current_analysis:
             "Review all input fields, model outputs, estimated risk, usage change, "
             "and the monthly cost flagged for review."
         )
-        display_data = data.rename(
+        display_data = data.drop(columns=["prediction"]).rename(
             columns={
                 "subscription_name": "Subscription",
                 "category": "Category",
                 "monthly_cost": "Monthly Cost (₹)",
                 "usage_days": "Usage Days",
                 "waste_risk": "Waste Risk (%)",
+                "waste_prediction": "Waste Prediction",
                 "review_cost": "Cost to Review (₹)",
                 "usage_change": "Usage Change (Days)",
             }
@@ -3131,6 +3160,12 @@ if has_current_analysis:
             type="primary",
             icon=":material/picture_as_pdf:",
             key="pdf-report-download",
+        )
+        st.caption(
+            "Waste Prediction is application-derived from experimental risk "
+            "bands: High Waste at 80% or above, Possible Waste from 50% to "
+            "below 80%, and Good Value below 50%. It is not a third Random "
+            "Forest class."
         )
         st.caption(
             "Model limitation: the current model was trained on synthetic labels. "
